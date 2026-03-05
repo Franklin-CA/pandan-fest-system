@@ -255,6 +255,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       confirmLabel: 'Lock All',
       confirmColor: _cLocked,
     );
+<<<<<<< HEAD
     if (ok) {
       setState(() {
         for (final j in _judges) {
@@ -262,6 +263,12 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
         }
       });
     }
+=======
+    if (ok)
+      setState(() {
+        for (final j in _judges) j.isLocked = true;
+      });
+>>>>>>> 70fd73382c82b226a6daba422e1b6dc23a2d4564
   }
 
   Future<void> _unlockAll() async {
@@ -273,6 +280,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       confirmLabel: 'Unlock All',
       confirmColor: _cOnline,
     );
+<<<<<<< HEAD
     if (ok) {
       setState(() {
         for (final j in _judges) {
@@ -280,6 +288,12 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
         }
       });
     }
+=======
+    if (ok)
+      setState(() {
+        for (final j in _judges) j.isLocked = false;
+      });
+>>>>>>> 70fd73382c82b226a6daba422e1b6dc23a2d4564
   }
 
   Future<bool> _confirm({

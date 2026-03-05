@@ -7,6 +7,9 @@ import 'package:pandan_fest/admin/results_screen.dart';
 import 'package:pandan_fest/admin/scoring_criteria_config.dart';
 import 'package:pandan_fest/admin/settings.dart';
 import 'package:pandan_fest/constant/colors.dart';
+import 'package:pandan_fest/admin/judges.dart';
+import 'package:pandan_fest/admin/settings.dart'; // ← ADD THIS
+import 'package:pandan_fest/admin/results.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -105,7 +108,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         Row(
           children: [
             Icon(Icons.circle, color: AppColors.live, size: 10),
-            SizedBox(width: 6),
+            const SizedBox(width: 6),
             Text("LIVE", style: GoogleFonts.poppins(color: Colors.white)),
           ],
         ),
@@ -142,11 +145,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      setState(() {
-                        selectedIndex = index;
-                      });
-                    },
+                    onTap: () => setState(() => selectedIndex = index),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 14,
@@ -208,7 +207,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 5:
         return const ResultsScreen();
       case 6:
+<<<<<<< HEAD
         return const SettingsControlsScreen();
+=======
+        return const SettingsControlsScreen(); // ← plugged in here
+>>>>>>> 70fd73382c82b226a6daba422e1b6dc23a2d4564
       default:
         return _dashboardHome();
     }
