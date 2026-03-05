@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:pandan_fest/admin/dance_group_management.dart';
+import 'package:pandan_fest/admin/live_control_panel.dart';
+import 'package:pandan_fest/admin/scoring_criteria_config.dart';
 import 'package:pandan_fest/constant/colors.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -192,13 +195,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 0:
         return _dashboardHome();
       case 1:
-        return const Center(child: Text("Dance Groups Management"));
+        return const DanceGroupManagement();
       case 2:
         return const Center(child: Text("Judges Management"));
       case 3:
-        return const Center(child: Text("Criteria Setup"));
+        return const ScoringCriteriaConfiguration();
       case 4:
-        return const Center(child: Text("Live Control Panel"));
+        return const LiveControlPanel();
       case 5:
         return const Center(child: Text("Results & Rankings"));
       case 6:
@@ -234,7 +237,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   crossAxisCount: crossAxisCount,
                   crossAxisSpacing: 25,
                   mainAxisSpacing: 25,
-                  childAspectRatio: 1.3,
+                  childAspectRatio: 1.6,
                 ),
                 itemBuilder: (context, index) {
                   return DashboardCard(
