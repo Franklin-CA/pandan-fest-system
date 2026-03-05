@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/admin/dance_group_management.dart';
+import 'package:pandan_fest/admin/judges.dart';
 import 'package:pandan_fest/admin/live_control_panel.dart';
+import 'package:pandan_fest/admin/results_screen.dart';
 import 'package:pandan_fest/admin/scoring_criteria_config.dart';
+import 'package:pandan_fest/admin/settings.dart';
 import 'package:pandan_fest/constant/colors.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -197,15 +200,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 1:
         return const DanceGroupManagement();
       case 2:
-        return const Center(child: Text("Judges Management"));
+        return const JudgesManagementScreen();
       case 3:
         return const ScoringCriteriaConfiguration();
       case 4:
         return const LiveControlPanel();
       case 5:
-        return const Center(child: Text("Results & Rankings"));
+        return const ResultsScreen();
       case 6:
-        return const Center(child: Text("System Settings"));
+        return const SettingsControlsScreen();
       default:
         return _dashboardHome();
     }

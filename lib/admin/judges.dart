@@ -255,10 +255,13 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       confirmLabel: 'Lock All',
       confirmColor: _cLocked,
     );
-    if (ok)
+    if (ok) {
       setState(() {
-        for (final j in _judges) j.isLocked = true;
+        for (final j in _judges) {
+          j.isLocked = true;
+        }
       });
+    }
   }
 
   Future<void> _unlockAll() async {
@@ -270,10 +273,13 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       confirmLabel: 'Unlock All',
       confirmColor: _cOnline,
     );
-    if (ok)
+    if (ok) {
       setState(() {
-        for (final j in _judges) j.isLocked = false;
+        for (final j in _judges) {
+          j.isLocked = false;
+        }
       });
+    }
   }
 
   Future<bool> _confirm({
