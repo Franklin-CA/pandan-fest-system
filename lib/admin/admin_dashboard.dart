@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
+import 'package:pandan_fest/admin/judges.dart';
+import 'package:pandan_fest/admin/settings.dart'; // ← ADD THIS
+import 'package:pandan_fest/admin/results.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -99,7 +102,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         Row(
           children: [
             Icon(Icons.circle, color: AppColors.live, size: 10),
-            SizedBox(width: 6),
+            const SizedBox(width: 6),
             Text("LIVE", style: GoogleFonts.poppins(color: Colors.white)),
           ],
         ),
@@ -136,11 +139,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   ),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      setState(() {
-                        selectedIndex = index;
-                      });
-                    },
+                    onTap: () => setState(() => selectedIndex = index),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         vertical: 14,
@@ -194,15 +193,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 1:
         return const Center(child: Text("Dance Groups Management"));
       case 2:
-        return const Center(child: Text("Judges Management"));
+        return const JudgesManagementScreen();
       case 3:
         return const Center(child: Text("Criteria Setup"));
       case 4:
         return const Center(child: Text("Live Control Panel"));
       case 5:
-        return const Center(child: Text("Results & Rankings"));
+        return const ResultsScreen();
       case 6:
-        return const Center(child: Text("System Settings"));
+        return const SettingsControlsScreen(); // ← plugged in here
       default:
         return _dashboardHome();
     }
