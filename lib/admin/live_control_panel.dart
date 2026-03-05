@@ -1,202 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
-
-// ================= STATIC DATA MODELS =================
-
-class PerformingGroup {
-  final String id;
-  final String name;
-  final String barangay;
-  final String theme;
-  final int performanceOrder;
-
-  const PerformingGroup({
-    required this.id,
-    required this.name,
-    required this.barangay,
-    required this.theme,
-    required this.performanceOrder,
-  });
-}
-
-class ActiveCriterion {
-  final String id;
-  final String name;
-  final double weight;
-  final double maxScore;
-
-  const ActiveCriterion({
-    required this.id,
-    required this.name,
-    required this.weight,
-    required this.maxScore,
-  });
-}
-
-class JudgeScore {
-  final String judgeId;
-  final String judgeName;
-  final Map<String, double> scores; // criterionId -> score
-  final bool isSubmitted;
-
-  const JudgeScore({
-    required this.judgeId,
-    required this.judgeName,
-    required this.scores,
-    required this.isSubmitted,
-  });
-
-  double get totalWeighted => scores.entries.fold(0.0, (sum, e) {
-    final criterion = _staticCriteria.firstWhere(
-      (c) => c.id == e.key,
-      orElse: () =>
-          const ActiveCriterion(id: '', name: '', weight: 0, maxScore: 100),
-    );
-    return sum + (e.value * criterion.weight / 100);
-  });
-}
-
-class RankingEntry {
-  final String groupId;
-  final String groupName;
-  final String barangay;
-  final double averageScore;
-  final int rank;
-
-  const RankingEntry({
-    required this.groupId,
-    required this.groupName,
-    required this.barangay,
-    required this.averageScore,
-    required this.rank,
-  });
-}
-
-// ================= STATIC SAMPLE DATA =================
-
-const List<PerformingGroup> _staticGroups = [
-  PerformingGroup(
-    id: 'g1',
-    name: 'Sayaw Pandan',
-    barangay: 'Brgy. Pandan',
-    theme: 'Urban Fusion',
-    performanceOrder: 1,
-  ),
-  PerformingGroup(
-    id: 'g2',
-    name: 'Ritmo Barangay',
-    barangay: 'Brgy. San Isidro',
-    theme: 'Cultural Heritage',
-    performanceOrder: 2,
-  ),
-  PerformingGroup(
-    id: 'g3',
-    name: 'Kalye Kings',
-    barangay: 'Brgy. Malaya',
-    theme: 'Hip-Hop Street',
-    performanceOrder: 3,
-  ),
-  PerformingGroup(
-    id: 'g4',
-    name: 'Alon Dancers',
-    barangay: 'Brgy. Bagong Silang',
-    theme: 'Contemporary Wave',
-    performanceOrder: 4,
-  ),
-];
-
-const List<ActiveCriterion> _staticCriteria = [
-  ActiveCriterion(id: 'c1', name: 'Choreography', weight: 25, maxScore: 100),
-  ActiveCriterion(id: 'c2', name: 'Synchronization', weight: 20, maxScore: 100),
-  ActiveCriterion(id: 'c3', name: 'Costume', weight: 15, maxScore: 100),
-  ActiveCriterion(id: 'c4', name: 'Musicality', weight: 20, maxScore: 100),
-  ActiveCriterion(id: 'c5', name: 'Overall Impact', weight: 20, maxScore: 100),
-];
-
-// Simulated scores per group per judge
-final Map<String, List<JudgeScore>> _staticJudgeScores = {
-  'g1': [
-    JudgeScore(
-      judgeId: 'j1',
-      judgeName: 'Judge Reyes',
-      scores: {'c1': 88, 'c2': 90, 'c3': 85, 'c4': 91, 'c5': 87},
-      isSubmitted: true,
-    ),
-    JudgeScore(
-      judgeId: 'j2',
-      judgeName: 'Judge Santos',
-      scores: {'c1': 92, 'c2': 88, 'c3': 90, 'c4': 86, 'c5': 93},
-      isSubmitted: true,
-    ),
-    JudgeScore(
-      judgeId: 'j3',
-      judgeName: 'Judge Cruz',
-      scores: {'c1': 85, 'c2': 84, 'c3': 88, 'c4': 89, 'c5': 86},
-      isSubmitted: false,
-    ),
-  ],
-  'g2': [
-    JudgeScore(
-      judgeId: 'j1',
-      judgeName: 'Judge Reyes',
-      scores: {'c1': 80, 'c2': 82, 'c3': 79, 'c4': 83, 'c5': 81},
-      isSubmitted: true,
-    ),
-    JudgeScore(
-      judgeId: 'j2',
-      judgeName: 'Judge Santos',
-      scores: {'c1': 84, 'c2': 80, 'c3': 83, 'c4': 78, 'c5': 82},
-      isSubmitted: true,
-    ),
-    JudgeScore(
-      judgeId: 'j3',
-      judgeName: 'Judge Cruz',
-      scores: {'c1': 79, 'c2': 77, 'c3': 81, 'c4': 80, 'c5': 78},
-      isSubmitted: true,
-    ),
-  ],
-  'g3': [
-    JudgeScore(
-      judgeId: 'j1',
-      judgeName: 'Judge Reyes',
-      scores: {'c1': 86, 'c2': 85, 'c3': 84, 'c4': 87, 'c5': 88},
-      isSubmitted: true,
-    ),
-    JudgeScore(
-      judgeId: 'j2',
-      judgeName: 'Judge Santos',
-      scores: {'c1': 89, 'c2': 87, 'c3': 86, 'c4': 84, 'c5': 90},
-      isSubmitted: false,
-    ),
-    JudgeScore(
-      judgeId: 'j3',
-      judgeName: 'Judge Cruz',
-      scores: {},
-      isSubmitted: false,
-    ),
-  ],
-  'g4': [
-    JudgeScore(
-      judgeId: 'j1',
-      judgeName: 'Judge Reyes',
-      scores: {},
-      isSubmitted: false,
-    ),
-    JudgeScore(
-      judgeId: 'j2',
-      judgeName: 'Judge Santos',
-      scores: {},
-      isSubmitted: false,
-    ),
-    JudgeScore(
-      judgeId: 'j3',
-      judgeName: 'Judge Cruz',
-      scores: {},
-      isSubmitted: false,
-    ),
-  ],
-};
+import 'package:pandan_fest/models/app_models.dart';
 
 // ================= MAIN SCREEN =================
 
@@ -210,7 +15,8 @@ class LiveControlPanel extends StatefulWidget {
 class _LiveControlPanelState extends State<LiveControlPanel>
     with SingleTickerProviderStateMixin {
   String? selectedGroupId;
-  List<String> selectedCriteriaIds = _staticCriteria.map((c) => c.id).toList();
+  List<String> selectedCriteriaIds =
+      staticCriteria.map((c) => c.id).toList();
   bool isPushedToJudges = false;
   bool isPushing = false;
 
@@ -218,50 +24,20 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   late Animation<double> _pulseAnimation;
 
   PerformingGroup? get selectedGroup => selectedGroupId != null
-      ? _staticGroups.firstWhere((g) => g.id == selectedGroupId)
+      ? staticGroups.firstWhere((g) => g.id == selectedGroupId)
       : null;
 
-  List<ActiveCriterion> get activeCriteria =>
-      _staticCriteria.where((c) => selectedCriteriaIds.contains(c.id)).toList();
+  List<ActiveCriterion> get activeCriteria => staticCriteria
+      .where((c) => selectedCriteriaIds.contains(c.id))
+      .toList();
 
-  List<JudgeScore> get currentScores => selectedGroupId != null
-      ? (_staticJudgeScores[selectedGroupId] ?? [])
-      : [];
+  List<JudgeScore> get currentScores =>
+      selectedGroupId != null
+          ? (resolvedJudgeScores[selectedGroupId] ?? [])
+          : [];
 
-  List<RankingEntry> get rankings {
-    final List<RankingEntry> entries = [];
-    _staticJudgeScores.forEach((groupId, judgeScores) {
-      final submitted = judgeScores.where((j) => j.isSubmitted).toList();
-      if (submitted.isEmpty) return;
-      final avg =
-          submitted.fold(0.0, (sum, j) => sum + j.totalWeighted) /
-          submitted.length;
-      final group = _staticGroups.firstWhere((g) => g.id == groupId);
-      entries.add(
-        RankingEntry(
-          groupId: groupId,
-          groupName: group.name,
-          barangay: group.barangay,
-          averageScore: avg,
-          rank: 0,
-        ),
-      );
-    });
-    entries.sort((a, b) => b.averageScore.compareTo(a.averageScore));
-    return entries
-        .asMap()
-        .entries
-        .map(
-          (e) => RankingEntry(
-            groupId: e.value.groupId,
-            groupName: e.value.groupName,
-            barangay: e.value.barangay,
-            averageScore: e.value.averageScore,
-            rank: e.key + 1,
-          ),
-        )
-        .toList();
-  }
+  List<RankingEntry> get rankings =>
+      computeRankings(resolvedJudgeScores, staticGroups, staticCriteria);
 
   @override
   void initState() {
@@ -354,11 +130,14 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                 decoration: BoxDecoration(
                   color: AppColors.live.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.live.withOpacity(0.4)),
+                  border: Border.all(
+                    color: AppColors.live.withOpacity(0.4),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.wifi_rounded, color: AppColors.live, size: 16),
+                    Icon(Icons.wifi_rounded,
+                        color: AppColors.live, size: 16),
                     const SizedBox(width: 8),
                     Text(
                       "Synced to all judges",
@@ -371,11 +150,8 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                     const SizedBox(width: 10),
                     GestureDetector(
                       onTap: _resetPush,
-                      child: Icon(
-                        Icons.close_rounded,
-                        color: AppColors.live,
-                        size: 16,
-                      ),
+                      child: Icon(Icons.close_rounded,
+                          color: AppColors.live, size: 16),
                     ),
                   ],
                 ),
@@ -395,7 +171,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                   child: Column(
                     children: [
                       _GroupSelector(
-                        groups: _staticGroups,
+                        groups: staticGroups,
                         selectedId: selectedGroupId,
                         onSelect: (id) => setState(() {
                           selectedGroupId = id;
@@ -404,7 +180,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                       ),
                       const SizedBox(height: 16),
                       _CriteriaSelector(
-                        criteria: _staticCriteria,
+                        criteria: staticCriteria,
                         selectedIds: selectedCriteriaIds,
                         onToggle: (id) => setState(() {
                           if (selectedCriteriaIds.contains(id)) {
@@ -417,8 +193,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                       ),
                       const SizedBox(height: 16),
                       _PushButton(
-                        isReady:
-                            selectedGroupId != null &&
+                        isReady: selectedGroupId != null &&
                             activeCriteria.isNotEmpty,
                         isPushing: isPushing,
                         isPushed: isPushedToJudges,
@@ -444,7 +219,9 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                     ),
                     const SizedBox(height: 16),
                     // Rankings takes remaining space
-                    Expanded(child: _RankingBoard(rankings: rankings)),
+                    Expanded(
+                      child: _RankingBoard(rankings: rankings),
+                    ),
                   ],
                 ),
               ),
@@ -489,7 +266,8 @@ class _GroupSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.groups_rounded, color: AppColors.secondary, size: 18),
+              Icon(Icons.groups_rounded,
+                  color: AppColors.secondary, size: 18),
               const SizedBox(width: 8),
               Text(
                 "Current Performing Group",
@@ -509,9 +287,7 @@ class _GroupSelector extends StatelessWidget {
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 11,
-                ),
+                    horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.secondary.withOpacity(0.12)
@@ -558,7 +334,9 @@ class _GroupSelector extends StatelessWidget {
                             style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isSelected ? AppColors.secondary : null,
+                              color: isSelected
+                                  ? AppColors.secondary
+                                  : null,
                             ),
                           ),
                           Text(
@@ -572,17 +350,11 @@ class _GroupSelector extends StatelessWidget {
                       ),
                     ),
                     if (isSelected)
-                      Icon(
-                        Icons.radio_button_checked_rounded,
-                        color: AppColors.secondary,
-                        size: 18,
-                      )
+                      Icon(Icons.radio_button_checked_rounded,
+                          color: AppColors.secondary, size: 18)
                     else
-                      Icon(
-                        Icons.radio_button_off_rounded,
-                        color: AppColors.divider,
-                        size: 18,
-                      ),
+                      Icon(Icons.radio_button_off_rounded,
+                          color: AppColors.divider, size: 18),
                   ],
                 ),
               ),
@@ -627,11 +399,8 @@ class _CriteriaSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.rule_folder_rounded,
-                color: AppColors.secondary,
-                size: 18,
-              ),
+              Icon(Icons.rule_folder_rounded,
+                  color: AppColors.secondary, size: 18),
               const SizedBox(width: 8),
               Text(
                 "Active Criteria",
@@ -659,9 +428,7 @@ class _CriteriaSelector extends StatelessWidget {
                 duration: const Duration(milliseconds: 180),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
+                    horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.secondary.withOpacity(0.08)
@@ -697,9 +464,7 @@ class _CriteriaSelector extends StatelessWidget {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
+                          horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? AppColors.secondary.withOpacity(0.12)
@@ -746,6 +511,7 @@ class _PushButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color bgColor;
+    Color fgColor = Colors.white;
     Widget child;
     VoidCallback? tapHandler;
 
@@ -794,6 +560,7 @@ class _PushButton extends StatelessWidget {
       tapHandler = onPush;
     } else if (!isReady) {
       bgColor = AppColors.divider;
+      fgColor = AppColors.silverRank;
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -871,15 +638,15 @@ class _ScoreDisplay extends StatelessWidget {
   });
 
   double get avgWeightedScore {
-    final submitted = judgeScores
-        .where((j) => j.isSubmitted && j.scores.isNotEmpty)
-        .toList();
+    final submitted =
+        judgeScores.where((j) => j.isSubmitted && j.scores.isNotEmpty).toList();
     if (submitted.isEmpty) return 0;
-    return submitted.fold(0.0, (s, j) => s + j.totalWeighted) /
+    return submitted.fold(0.0, (s, j) => s + j.totalWeighted(staticCriteria)) /
         submitted.length;
   }
 
-  int get submittedCount => judgeScores.where((j) => j.isSubmitted).length;
+  int get submittedCount =>
+      judgeScores.where((j) => j.isSubmitted).length;
 
   @override
   Widget build(BuildContext context) {
@@ -902,22 +669,19 @@ class _ScoreDisplay extends StatelessWidget {
           // Header
           Row(
             children: [
-              Icon(Icons.live_tv_rounded, color: AppColors.primary, size: 18),
+              Icon(Icons.live_tv_rounded,
+                  color: AppColors.primary, size: 18),
               const SizedBox(width: 8),
               Text(
                 "Real-Time Score Display",
                 style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                    fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const Spacer(),
               if (group != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 5,
-                  ),
+                      horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -939,11 +703,8 @@ class _ScoreDisplay extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Icon(
-                    Icons.wifi_off_rounded,
-                    size: 40,
-                    color: AppColors.divider,
-                  ),
+                  Icon(Icons.wifi_off_rounded,
+                      size: 40, color: AppColors.divider),
                   const SizedBox(height: 10),
                   Text(
                     group == null
@@ -1049,9 +810,10 @@ class _ScoreDisplay extends StatelessWidget {
             const SizedBox(height: 14),
 
             // Per-Judge Score Rows
-            ...judgeScores.map(
-              (js) => _JudgeScoreRow(judgeScore: js, criteria: criteria),
-            ),
+            ...judgeScores.map((js) => _JudgeScoreRow(
+                  judgeScore: js,
+                  criteria: criteria,
+                )),
           ],
         ],
       ),
@@ -1065,11 +827,15 @@ class _JudgeScoreRow extends StatelessWidget {
   final JudgeScore judgeScore;
   final List<ActiveCriterion> criteria;
 
-  const _JudgeScoreRow({required this.judgeScore, required this.criteria});
+  const _JudgeScoreRow({
+    required this.judgeScore,
+    required this.criteria,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final hasScores = judgeScore.isSubmitted && judgeScore.scores.isNotEmpty;
+    final hasScores =
+        judgeScore.isSubmitted && judgeScore.scores.isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1125,9 +891,7 @@ class _JudgeScoreRow extends StatelessWidget {
                       final score = judgeScore.scores[c.id];
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
+                            horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: AppColors.secondary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(6),
@@ -1157,13 +921,14 @@ class _JudgeScoreRow extends StatelessWidget {
           // Weighted total
           if (hasScores)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                judgeScore.totalWeighted.toStringAsFixed(1),
+                judgeScore.totalWeighted(staticCriteria).toStringAsFixed(1),
                 style: GoogleFonts.poppins(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -1204,25 +969,18 @@ class _RankingBoard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                Icons.emoji_events_rounded,
-                color: AppColors.goldRank,
-                size: 18,
-              ),
+              Icon(Icons.emoji_events_rounded,
+                  color: AppColors.goldRank, size: 18),
               const SizedBox(width: 8),
               Text(
                 "Live Rankings",
                 style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+                    fontWeight: FontWeight.bold, fontSize: 14),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.live.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -1258,7 +1016,8 @@ class _RankingBoard extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: rankings.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, __) =>
+                    const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final entry = rankings[i];
                   return _RankRow(entry: entry);
@@ -1318,11 +1077,8 @@ class _RankRow extends StatelessWidget {
             ),
             child: Center(
               child: entry.rank <= 3
-                  ? Icon(
-                      Icons.emoji_events_rounded,
-                      color: _rankColor,
-                      size: 16,
-                    )
+                  ? Icon(Icons.emoji_events_rounded,
+                      color: _rankColor, size: 16)
                   : Text(
                       "${entry.rank}",
                       style: GoogleFonts.poppins(
@@ -1379,7 +1135,8 @@ class _RankRow extends StatelessWidget {
                     value: (entry.averageScore / 100).clamp(0.0, 1.0),
                     minHeight: 5,
                     backgroundColor: _rankColor.withOpacity(0.15),
-                    valueColor: AlwaysStoppedAnimation<Color>(_rankColor),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(_rankColor),
                   ),
                 ),
               ),

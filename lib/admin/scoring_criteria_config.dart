@@ -506,7 +506,7 @@ class _AutoTotalBanner extends StatelessWidget {
           Switch(
             value: enabled,
             onChanged: onToggle,
-            activeColor: AppColors.accentGreen,
+            activeThumbColor: AppColors.accentGreen,
             activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
           ),
         ],
@@ -659,7 +659,7 @@ class _CriteriaCard extends StatelessWidget {
                     Switch(
                       value: isActive,
                       onChanged: onToggleActive,
-                      activeColor: AppColors.accentGreen,
+                      activeThumbColor: AppColors.accentGreen,
                       activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
@@ -1124,7 +1124,7 @@ class _CriteriaFormDialogState extends State<_CriteriaFormDialog> {
                     Switch(
                       value: _isActive,
                       onChanged: (val) => setState(() => _isActive = val),
-                      activeColor: AppColors.accentGreen,
+                      activeThumbColor: AppColors.accentGreen,
                       activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
                     ),
                   ],
