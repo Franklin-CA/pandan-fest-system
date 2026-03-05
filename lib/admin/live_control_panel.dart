@@ -746,7 +746,6 @@ class _PushButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color bgColor;
-    Color fgColor = Colors.white;
     Widget child;
     VoidCallback? tapHandler;
 
@@ -795,7 +794,6 @@ class _PushButton extends StatelessWidget {
       tapHandler = onPush;
     } else if (!isReady) {
       bgColor = AppColors.divider;
-      fgColor = AppColors.silverRank;
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
