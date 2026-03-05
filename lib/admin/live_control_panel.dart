@@ -1388,7 +1388,7 @@ class _RankRow extends StatelessWidget {
             ],
           ),
         ],
-      ), 
+      ),
     );
   }
 }
