@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
 
-// ================= DATA MODELS =================
+// ═══════════════════════════════════════════════════════════════
+//  MODELS
+// ═══════════════════════════════════════════════════════════════
 
 class DanceGroup {
   final String id;
@@ -44,7 +46,9 @@ class ScoreHistory {
   });
 }
 
-// ================= SAMPLE DATA =================
+// ═══════════════════════════════════════════════════════════════
+//  SAMPLE DATA
+// ═══════════════════════════════════════════════════════════════
 
 final List<DanceGroup> _sampleGroups = [
   DanceGroup(
@@ -139,7 +143,9 @@ final List<DanceGroup> _sampleGroups = [
   ),
 ];
 
-// ================= MAIN SCREEN =================
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN
+// ═══════════════════════════════════════════════════════════════
 
 class DanceGroupManagement extends StatefulWidget {
   const DanceGroupManagement({super.key});
@@ -152,107 +158,185 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
   List<DanceGroup> groups = List.from(_sampleGroups);
   String _searchQuery = '';
 
-  List<DanceGroup> get filteredGroups => groups
+  List<DanceGroup> get _filtered => groups
       .where(
         (g) =>
             g.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            g.barangay.toLowerCase().contains(_searchQuery.toLowerCase()),
+            g.barangay.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+            g.coach.toLowerCase().contains(_searchQuery.toLowerCase()),
       )
       .toList();
 
+  // ── Build ──────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Header
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              "Dance Groups",
-              style: GoogleFonts.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: () => _showGroupDialog(context, null),
-              icon: const Icon(Icons.add_rounded),
-              label: Text("Add Group", style: GoogleFonts.poppins()),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.secondary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
-
-        // Search Bar
-        TextField(
-          onChanged: (val) => setState(() => _searchQuery = val),
-          style: GoogleFonts.poppins(),
-          decoration: InputDecoration(
-            hintText: "Search group or barangay...",
-            hintStyle: GoogleFonts.poppins(
-              color: AppColors.silverRank,
-              fontSize: 14,
-            ),
-            prefixIcon: const Icon(
-              Icons.search_rounded,
-              color: AppColors.silverRank,
-            ),
-            filled: true,
-            fillColor: AppColors.surface,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
+        _buildHeader(),
         const SizedBox(height: 16),
-
-        // Groups List
+        _buildStatsRow(),
+        const SizedBox(height: 16),
+        _buildSearchBar(),
+        const SizedBox(height: 6),
+        _buildResultsHint(),
+        const SizedBox(height: 10),
         Expanded(child: _buildGroupsList()),
       ],
     );
   }
 
-  // ================= GROUPS LIST =================
-
-  Widget _buildGroupsList() {
-    final displayed = filteredGroups;
-    if (displayed.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.groups_rounded, size: 64, color: AppColors.divider),
-            const SizedBox(height: 16),
-            Text(
-              "No groups found",
-              style: GoogleFonts.poppins(
-                color: AppColors.silverRank,
-                fontSize: 16,
+  // ── Header ────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Dance Groups',
+                style: GoogleFonts.poppins(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-            ),
-          ],
+              Text(
+                'Manage all registered dance groups for PandanFest 2026',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
         ),
+        ElevatedButton.icon(
+          onPressed: () => _showGroupDialog(context, null),
+          icon: const Icon(Icons.add_rounded),
+          label: Text('Add New Group', style: GoogleFonts.poppins()),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.secondary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Stats Row ─────────────────────────────────────────────
+  Widget _buildStatsRow() {
+    return Row(
+      children: [
+        _StatBadge(
+          icon: Icons.groups_rounded,
+          label: 'Total Groups',
+          value: '${groups.length}',
+          color: AppColors.secondary,
+        ),
+        const SizedBox(width: 12),
+        _StatBadge(
+          icon: Icons.person_rounded,
+          label: 'Total Performers',
+          value: '${groups.fold(0, (s, g) => s + g.memberCount)}',
+          color: const Color(0xFF007AFF),
+        ),
+        const SizedBox(width: 12),
+        _StatBadge(
+          icon: Icons.history_rounded,
+          label: 'With Score History',
+          value: '${groups.where((g) => g.scoreHistory.isNotEmpty).length}',
+          color: AppColors.accentGreen,
+        ),
+      ],
+    );
+  }
+
+  // ── Search Bar ────────────────────────────────────────────
+  Widget _buildSearchBar() {
+    return TextField(
+      onChanged: (val) => setState(() => _searchQuery = val),
+      style: GoogleFonts.poppins(),
+      decoration: InputDecoration(
+        hintText: 'Search by group name, barangay, or coach…',
+        hintStyle: GoogleFonts.poppins(
+          color: AppColors.silverRank,
+          fontSize: 13,
+        ),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppColors.silverRank,
+        ),
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.silverRank,
+                  size: 18,
+                ),
+                onPressed: () => setState(() => _searchQuery = ''),
+                tooltip: 'Clear search',
+              )
+            : null,
+        filled: true,
+        fillColor: AppColors.surface,
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.secondary, width: 1.5),
+        ),
+      ),
+    );
+  }
+
+  // ── Results hint ──────────────────────────────────────────
+  Widget _buildResultsHint() {
+    if (_searchQuery.isEmpty) return const SizedBox.shrink();
+    final count = _filtered.length;
+    return Text(
+      count == 0
+          ? 'No groups match "$_searchQuery"'
+          : '$count group${count != 1 ? 's' : ''} found for "$_searchQuery"',
+      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500]),
+    );
+  }
+
+  // ── Groups List ───────────────────────────────────────────
+  Widget _buildGroupsList() {
+    final displayed = _filtered;
+
+    if (displayed.isEmpty && groups.isEmpty) {
+      return _EmptyState(
+        icon: Icons.groups_rounded,
+        title: 'No dance groups yet',
+        subtitle:
+            'Tap "Add New Group" to register the first dance group for the competition.',
+        actionLabel: 'Add First Group',
+        onAction: () => _showGroupDialog(context, null),
+      );
+    }
+
+    if (displayed.isEmpty) {
+      return _EmptyState(
+        icon: Icons.search_off_rounded,
+        title: 'No groups found',
+        subtitle: 'Try a different name, barangay, or coach name.',
+        actionLabel: 'Clear Search',
+        onAction: () => setState(() => _searchQuery = ''),
       );
     }
 
     return ListView.separated(
       itemCount: displayed.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 14),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final group = displayed[index];
         return _GroupCard(
@@ -265,8 +349,7 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
     );
   }
 
-  // ================= DIALOGS =================
-
+  // ── Dialogs ───────────────────────────────────────────────
   void _showGroupDialog(BuildContext context, DanceGroup? existing) {
     showDialog(
       context: context,
@@ -293,36 +376,71 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: AppColors.danger.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.delete_outline_rounded,
+            color: AppColors.danger,
+            size: 28,
+          ),
+        ),
         title: Text(
-          "Remove Group",
+          'Remove "${group.name}"?',
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
         ),
         content: Text(
-          "Are you sure you want to remove \"${group.name}\"? This action cannot be undone.",
-          style: GoogleFonts.poppins(fontSize: 14, color: AppColors.silverRank),
+          'This will permanently remove the group and all their score history. This action cannot be undone.',
+          style: GoogleFonts.poppins(fontSize: 13, color: AppColors.silverRank),
+          textAlign: TextAlign.center,
         ),
+        actionsAlignment: MainAxisAlignment.center,
         actions: [
-          TextButton(
+          OutlinedButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(
-              "Cancel",
-              style: GoogleFonts.poppins(color: AppColors.silverRank),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.silverRank,
+              side: const BorderSide(color: AppColors.divider),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
           ),
           ElevatedButton(
             onPressed: () {
               setState(() => groups.removeWhere((g) => g.id == group.id));
               Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '${group.name} has been removed.',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  backgroundColor: AppColors.danger,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.danger,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
             child: Text(
-              "Remove",
+              'Yes, Remove',
               style: GoogleFonts.poppins(color: Colors.white),
             ),
           ),
@@ -339,7 +457,9 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
   }
 }
 
-// ================= GROUP CARD =================
+// ═══════════════════════════════════════════════════════════════
+//  GROUP CARD
+// ═══════════════════════════════════════════════════════════════
 
 class _GroupCard extends StatelessWidget {
   final DanceGroup group;
@@ -357,13 +477,13 @@ class _GroupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
-            blurRadius: 12,
+            blurRadius: 10,
             color: AppColors.shadow,
             offset: Offset(0, 4),
           ),
@@ -371,27 +491,50 @@ class _GroupCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Avatar
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: AppColors.secondary.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: group.profileImagePath != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.asset(
-                      group.profileImagePath!,
-                      fit: BoxFit.cover,
+          // Order badge + avatar
+          Column(
+            children: [
+              Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: AppColors.secondary,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '${group.performanceOrder}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
-                  )
-                : Icon(
-                    Icons.groups_rounded,
-                    color: AppColors.secondary,
-                    size: 30,
                   ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.secondary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: group.profileImagePath != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Image.asset(
+                          group.profileImagePath!,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    : Icon(
+                        Icons.groups_rounded,
+                        color: AppColors.secondary,
+                        size: 28,
+                      ),
+              ),
+            ],
           ),
           const SizedBox(width: 16),
 
@@ -400,23 +543,52 @@ class _GroupCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  group.name,
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Wrap(
-                  spacing: 16,
+                Row(
                   children: [
-                    _infoChip(Icons.location_on_outlined, group.barangay),
-                    _infoChip(Icons.person_outline_rounded, group.coach),
-                    _infoChip(Icons.palette_outlined, group.theme),
-                    _infoChip(
+                    Text(
+                      group.name,
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                    if (group.scoreHistory.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.accentGreen.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${group.scoreHistory.length} scores',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: AppColors.accentGreen,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  children: [
+                    _InfoChip(Icons.location_on_outlined, group.barangay),
+                    _InfoChip(
+                      Icons.person_outline_rounded,
+                      'Coach: ${group.coach}',
+                    ),
+                    _InfoChip(Icons.palette_outlined, group.theme),
+                    _InfoChip(
                       Icons.people_outline_rounded,
-                      "${group.memberCount} members",
+                      '${group.memberCount} member${group.memberCount != 1 ? 's' : ''}',
                     ),
                   ],
                 ),
@@ -424,26 +596,29 @@ class _GroupCard extends StatelessWidget {
             ),
           ),
 
-          // Actions
+          // Action buttons with labels
           Row(
             children: [
               _ActionButton(
                 icon: Icons.history_rounded,
-                tooltip: "View History",
+                label: 'History',
+                tooltip: 'View score history',
                 color: AppColors.accentGreen,
                 onTap: onViewHistory,
               ),
               const SizedBox(width: 8),
               _ActionButton(
                 icon: Icons.edit_rounded,
-                tooltip: "Edit Group",
+                label: 'Edit',
+                tooltip: 'Edit group details',
                 color: AppColors.secondary,
                 onTap: onEdit,
               ),
               const SizedBox(width: 8),
               _ActionButton(
                 icon: Icons.delete_outline_rounded,
-                tooltip: "Remove Group",
+                label: 'Remove',
+                tooltip: 'Remove this group',
                 color: AppColors.danger,
                 onTap: onDelete,
               ),
@@ -454,11 +629,11 @@ class _GroupCard extends StatelessWidget {
     );
   }
 
-  Widget _infoChip(IconData icon, String label) {
+  Widget _InfoChip(IconData icon, String label) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: AppColors.silverRank),
+        Icon(icon, size: 13, color: AppColors.silverRank),
         const SizedBox(width: 4),
         Text(
           label,
@@ -471,12 +646,14 @@ class _GroupCard extends StatelessWidget {
 
 class _ActionButton extends StatelessWidget {
   final IconData icon;
+  final String label;
   final String tooltip;
   final Color color;
   final VoidCallback onTap;
 
   const _ActionButton({
     required this.icon,
+    required this.label,
     required this.tooltip,
     required this.color,
     required this.onTap,
@@ -490,19 +667,183 @@ class _ActionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, size: 20, color: color),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ================= GROUP FORM DIALOG =================
+// ═══════════════════════════════════════════════════════════════
+//  EMPTY STATE
+// ═══════════════════════════════════════════════════════════════
+
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _EmptyState({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.divider.withOpacity(0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 38, color: AppColors.silverRank),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: 340,
+            child: Text(
+              subtitle,
+              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500]),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: onAction,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.secondary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(actionLabel!, style: GoogleFonts.poppins()),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STAT BADGE
+// ═══════════════════════════════════════════════════════════════
+
+class _StatBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatBadge({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.15)),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 8,
+              color: AppColors.shadow,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: color, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GROUP FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
 
 class _GroupFormDialog extends StatefulWidget {
   final DanceGroup? existing;
@@ -515,13 +856,16 @@ class _GroupFormDialog extends StatefulWidget {
 }
 
 class _GroupFormDialogState extends State<_GroupFormDialog> {
-  late TextEditingController _nameCtrl;
-  late TextEditingController _barangayCtrl;
-  late TextEditingController _coachCtrl;
-  late TextEditingController _themeCtrl;
-  late TextEditingController _memberCountCtrl;
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _barangayCtrl;
+  late final TextEditingController _coachCtrl;
+  late final TextEditingController _themeCtrl;
+  late final TextEditingController _memberCountCtrl;
   final TextEditingController _memberInputCtrl = TextEditingController();
   late List<String> _members;
+
+  String? _nameError;
+  String? _barangayError;
 
   @override
   void initState() {
@@ -556,10 +900,22 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
     }
   }
 
+  bool _validate() {
+    bool ok = true;
+    setState(() {
+      _nameError = _nameCtrl.text.trim().isEmpty
+          ? 'Group name is required.'
+          : null;
+      _barangayError = _barangayCtrl.text.trim().isEmpty
+          ? 'Barangay is required.'
+          : null;
+      if (_nameError != null || _barangayError != null) ok = false;
+    });
+    return ok;
+  }
+
   void _save() {
-    if (_nameCtrl.text.trim().isEmpty || _barangayCtrl.text.trim().isEmpty) {
-      return;
-    }
+    if (!_validate()) return;
     final group = DanceGroup(
       id:
           widget.existing?.id ??
@@ -591,7 +947,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Title
+              // Dialog header
               Row(
                 children: [
                   Container(
@@ -607,18 +963,32 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  Text(
-                    isEdit ? "Edit Dance Group" : "Add Dance Group",
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEdit ? 'Edit Dance Group' : 'Add New Dance Group',
+                        style: GoogleFonts.poppins(
+                          fontSize: 19,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        isEdit
+                            ? 'Update the group\'s information below'
+                            : 'Fill in the details to register a new group',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
 
-              // Upload Profile Row
+              // Photo upload
               Row(
                 children: [
                   Container(
@@ -628,7 +998,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                       color: AppColors.secondary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: AppColors.secondary.withOpacity(0.3),
+                        color: AppColors.secondary.withOpacity(0.25),
                       ),
                     ),
                     child: Icon(
@@ -642,18 +1012,25 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "Group Profile Photo",
+                        'Group Profile Photo',
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      Text(
+                        'Optional — JPG or PNG, max 2 MB',
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: Colors.grey[500],
+                        ),
+                      ),
+                      const SizedBox(height: 6),
                       OutlinedButton.icon(
-                        onPressed: () {}, // Hook up image picker
-                        icon: const Icon(Icons.upload_rounded, size: 16),
+                        onPressed: () {},
+                        icon: const Icon(Icons.upload_rounded, size: 15),
                         label: Text(
-                          "Upload Image",
+                          'Upload Photo',
                           style: GoogleFonts.poppins(fontSize: 12),
                         ),
                         style: OutlinedButton.styleFrom(
@@ -674,29 +1051,49 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
               ),
               const SizedBox(height: 20),
 
-              // Fields
-              _buildField("Group Name *", _nameCtrl, "e.g. Sayaw Pandan"),
-              _buildField("Barangay *", _barangayCtrl, "e.g. Brgy. Pandan"),
-              _buildField("Coach / Trainer", _coachCtrl, "e.g. Maria Santos"),
-              _buildField("Theme / Style", _themeCtrl, "e.g. Urban Fusion"),
+              // Required fields
               _buildField(
-                "Total Members",
+                'Group Name *',
+                _nameCtrl,
+                'e.g. Sayaw Pandan',
+                errorText: _nameError,
+              ),
+              _buildField(
+                'Barangay *',
+                _barangayCtrl,
+                'e.g. Brgy. Pandan',
+                errorText: _barangayError,
+              ),
+              _buildField('Coach / Trainer', _coachCtrl, 'e.g. Maria Santos'),
+              _buildField(
+                'Dance Theme / Style',
+                _themeCtrl,
+                'e.g. Urban Fusion, Hip-Hop',
+              ),
+              _buildField(
+                'Total Number of Members',
                 _memberCountCtrl,
-                "e.g. 15",
+                'e.g. 15',
                 keyboardType: TextInputType.number,
               ),
 
-              const SizedBox(height: 8),
-
-              // Members List
+              // Member list
               Text(
-                "Members",
+                'Members List',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
+              Text(
+                'Add individual member names (optional)',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                ),
+              ),
+              const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
@@ -704,7 +1101,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                       controller: _memberInputCtrl,
                       style: GoogleFonts.poppins(fontSize: 14),
                       decoration: InputDecoration(
-                        hintText: "Add member name",
+                        hintText: 'Type member name and press Add…',
                         hintStyle: GoogleFonts.poppins(
                           color: AppColors.silverRank,
                           fontSize: 13,
@@ -713,6 +1110,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                         fillColor: AppColors.background,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
+                          vertical: 12,
                         ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -723,10 +1121,13 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  ElevatedButton(
+                  ElevatedButton.icon(
                     onPressed: _addMember,
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: Text('Add', style: GoogleFonts.poppins()),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.secondary,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 14,
@@ -735,7 +1136,6 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    child: const Icon(Icons.add_rounded, color: Colors.white),
                   ),
                 ],
               ),
@@ -764,6 +1164,31 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                         ),
                       )
                       .toList(),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline_rounded,
+                        size: 14,
+                        color: Colors.grey[400],
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'No members added yet. You can add them later.',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: Colors.grey[400],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
 
               const SizedBox(height: 28),
@@ -772,12 +1197,20 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
+                  OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(
-                      "Cancel",
-                      style: GoogleFonts.poppins(color: AppColors.silverRank),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.silverRank,
+                      side: const BorderSide(color: AppColors.divider),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
+                    child: Text('Cancel', style: GoogleFonts.poppins()),
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
@@ -787,7 +1220,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                       size: 18,
                     ),
                     label: Text(
-                      isEdit ? "Save Changes" : "Add Group",
+                      isEdit ? 'Save Changes' : 'Register Group',
                       style: GoogleFonts.poppins(),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -795,7 +1228,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 22,
-                        vertical: 14,
+                        vertical: 13,
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -816,6 +1249,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
     TextEditingController ctrl,
     String hint, {
     TextInputType keyboardType = TextInputType.text,
+    String? errorText,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -834,12 +1268,16 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
             controller: ctrl,
             keyboardType: keyboardType,
             style: GoogleFonts.poppins(fontSize: 14),
+            onChanged: (_) {
+              if (errorText != null) setState(() {});
+            },
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: GoogleFonts.poppins(
                 color: AppColors.silverRank,
                 fontSize: 13,
               ),
+              errorText: errorText,
               filled: true,
               fillColor: AppColors.background,
               contentPadding: const EdgeInsets.symmetric(
@@ -850,6 +1288,10 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide.none,
               ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.danger),
+              ),
             ),
           ),
         ],
@@ -858,12 +1300,26 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
   }
 }
 
-// ================= HISTORY DIALOG =================
+// ═══════════════════════════════════════════════════════════════
+//  HISTORY DIALOG
+// ═══════════════════════════════════════════════════════════════
 
 class _HistoryDialog extends StatelessWidget {
   final DanceGroup group;
-
   const _HistoryDialog({required this.group});
+
+  Color _rankColor(int rank) {
+    switch (rank) {
+      case 1:
+        return AppColors.goldRank;
+      case 2:
+        return AppColors.silverRank;
+      case 3:
+        return AppColors.bronzeRank;
+      default:
+        return AppColors.secondary;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -905,9 +1361,9 @@ class _HistoryDialog extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          "Performance History",
+                          'Score History — ${group.barangay}',
                           style: GoogleFonts.poppins(
-                            fontSize: 13,
+                            fontSize: 12,
                             color: AppColors.silverRank,
                           ),
                         ),
@@ -920,17 +1376,38 @@ class _HistoryDialog extends StatelessWidget {
                       Icons.close_rounded,
                       color: AppColors.silverRank,
                     ),
+                    tooltip: 'Close',
                   ),
                 ],
               ),
               const SizedBox(height: 20),
               if (group.scoreHistory.isEmpty)
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30),
-                    child: Text(
-                      "No history available.",
-                      style: GoogleFonts.poppins(color: AppColors.silverRank),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 30),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.history_toggle_off_rounded,
+                          size: 40,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No score history yet',
+                          style: GoogleFonts.poppins(
+                            color: AppColors.silverRank,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          'Scores will appear here after each phase.',
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey[400],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )
@@ -941,23 +1418,24 @@ class _HistoryDialog extends StatelessWidget {
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, i) {
                     final h = group.scoreHistory[i];
+                    final rc = _rankColor(h.rank);
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Row(
                         children: [
                           Container(
-                            width: 42,
-                            height: 42,
+                            width: 44,
+                            height: 44,
                             decoration: BoxDecoration(
-                              color: _rankColor(h.rank).withOpacity(0.15),
+                              color: rc.withOpacity(0.15),
                               shape: BoxShape.circle,
                             ),
                             child: Center(
                               child: Text(
-                                "#${h.rank}",
+                                '#${h.rank}',
                                 style: GoogleFonts.poppins(
                                   fontWeight: FontWeight.bold,
-                                  color: _rankColor(h.rank),
+                                  color: rc,
                                   fontSize: 13,
                                 ),
                               ),
@@ -995,7 +1473,7 @@ class _HistoryDialog extends StatelessWidget {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              "${h.score.toStringAsFixed(1)} pts",
+                              '${h.score.toStringAsFixed(1)} pts',
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.secondary,
@@ -1014,7 +1492,7 @@ class _HistoryDialog extends StatelessWidget {
                 child: TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: Text(
-                    "Close",
+                    'Close',
                     style: GoogleFonts.poppins(color: AppColors.silverRank),
                   ),
                 ),
@@ -1024,18 +1502,5 @@ class _HistoryDialog extends StatelessWidget {
         ),
       ),
     );
-  } 
-
-  Color _rankColor(int rank) {
-    switch (rank) {
-      case 1:
-        return AppColors.goldRank;
-      case 2:
-        return AppColors.silverRank;
-      case 3:
-        return AppColors.bronzeRank;
-      default:
-        return AppColors.secondary;
-    }
   }
 }

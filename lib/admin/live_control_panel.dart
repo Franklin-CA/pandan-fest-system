@@ -15,8 +15,7 @@ class LiveControlPanel extends StatefulWidget {
 class _LiveControlPanelState extends State<LiveControlPanel>
     with SingleTickerProviderStateMixin {
   String? selectedGroupId;
-  List<String> selectedCriteriaIds =
-      staticCriteria.map((c) => c.id).toList();
+  List<String> selectedCriteriaIds = staticCriteria.map((c) => c.id).toList();
   bool isPushedToJudges = false;
   bool isPushing = false;
 
@@ -27,14 +26,12 @@ class _LiveControlPanelState extends State<LiveControlPanel>
       ? staticGroups.firstWhere((g) => g.id == selectedGroupId)
       : null;
 
-  List<ActiveCriterion> get activeCriteria => staticCriteria
-      .where((c) => selectedCriteriaIds.contains(c.id))
-      .toList();
+  List<ActiveCriterion> get activeCriteria =>
+      staticCriteria.where((c) => selectedCriteriaIds.contains(c.id)).toList();
 
-  List<JudgeScore> get currentScores =>
-      selectedGroupId != null
-          ? (resolvedJudgeScores[selectedGroupId] ?? [])
-          : [];
+  List<JudgeScore> get currentScores => selectedGroupId != null
+      ? (resolvedJudgeScores[selectedGroupId] ?? [])
+      : [];
 
   List<RankingEntry> get rankings =>
       computeRankings(resolvedJudgeScores, staticGroups, staticCriteria);
@@ -65,106 +62,40 @@ class _LiveControlPanelState extends State<LiveControlPanel>
       isPushing = false;
       isPushedToJudges = true;
     });
+    _toast(
+      '${selectedGroup!.name} pushed to all judges. Scoring can begin.',
+      AppColors.live,
+    );
   }
 
   void _resetPush() => setState(() => isPushedToJudges = false);
+
+  void _toast(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Header ──
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Live Control Panel",
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      AnimatedBuilder(
-                        animation: _pulseAnimation,
-                        builder: (_, __) => Opacity(
-                          opacity: _pulseAnimation.value,
-                          child: Container(
-                            width: 8,
-                            height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppColors.live,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "LIVE SESSION ACTIVE",
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: AppColors.live,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            // Push Status Badge
-            if (isPushedToJudges)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.live.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.live.withOpacity(0.4),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi_rounded,
-                        color: AppColors.live, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Synced to all judges",
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: AppColors.live,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _resetPush,
-                      child: Icon(Icons.close_rounded,
-                          color: AppColors.live, size: 16),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 24),
-
+        _buildHeader(),
+        const SizedBox(height: 16),
+        _buildStepHint(),
+        const SizedBox(height: 20),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── LEFT COLUMN: Controls (scrollable) ──
+              // LEFT — Controls
               SizedBox(
                 width: 340,
                 child: SingleChildScrollView(
@@ -183,34 +114,35 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                         criteria: staticCriteria,
                         selectedIds: selectedCriteriaIds,
                         onToggle: (id) => setState(() {
-                          if (selectedCriteriaIds.contains(id)) {
-                            selectedCriteriaIds.remove(id);
-                          } else {
-                            selectedCriteriaIds.add(id);
-                          }
+                          selectedCriteriaIds.contains(id)
+                              ? selectedCriteriaIds.remove(id)
+                              : selectedCriteriaIds.add(id);
                           isPushedToJudges = false;
                         }),
                       ),
                       const SizedBox(height: 16),
                       _PushButton(
-                        isReady: selectedGroupId != null &&
+                        isReady:
+                            selectedGroupId != null &&
                             activeCriteria.isNotEmpty,
                         isPushing: isPushing,
                         isPushed: isPushedToJudges,
                         onPush: _pushToJudges,
                       ),
+                      if (isPushedToJudges) ...[
+                        const SizedBox(height: 10),
+                        _ResetHint(onReset: _resetPush),
+                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(width: 20),
-
-              // ── RIGHT COLUMN: Scores + Rankings ──
+              // RIGHT — Scores + Rankings
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Real-Time Score Display (intrinsic height)
                     _ScoreDisplay(
                       group: selectedGroup,
                       criteria: activeCriteria,
@@ -218,10 +150,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                       isPushed: isPushedToJudges,
                     ),
                     const SizedBox(height: 16),
-                    // Rankings takes remaining space
-                    Expanded(
-                      child: _RankingBoard(rankings: rankings),
-                    ),
+                    Expanded(child: _RankingBoard(rankings: rankings)),
                   ],
                 ),
               ),
@@ -229,6 +158,225 @@ class _LiveControlPanelState extends State<LiveControlPanel>
           ),
         ),
       ],
+    );
+  }
+
+  // ── Header ──────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Live Control Panel',
+                style: GoogleFonts.poppins(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  AnimatedBuilder(
+                    animation: _pulseAnimation,
+                    builder: (_, __) => Opacity(
+                      opacity: _pulseAnimation.value,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.live,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'LIVE SESSION ACTIVE',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.live,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        if (isPushedToJudges)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.live.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.live.withOpacity(0.4)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.wifi_rounded, color: AppColors.live, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Synced to all judges',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: AppColors.live,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _resetPush,
+                  child: Tooltip(
+                    message: 'Clear and select a new group',
+                    child: Icon(
+                      Icons.close_rounded,
+                      color: AppColors.live,
+                      size: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── Step Hint ────────────────────────────────────────────────
+  Widget _buildStepHint() {
+    final step = selectedGroupId == null
+        ? 1
+        : activeCriteria.isEmpty
+        ? 2
+        : !isPushedToJudges
+        ? 3
+        : 4;
+
+    final steps = [
+      _StepInfo(1, 'Select the performing group', step >= 1),
+      _StepInfo(2, 'Confirm active criteria', step >= 2),
+      _StepInfo(3, 'Push to judges', step >= 3),
+      _StepInfo(4, 'Monitor scores live', step >= 4),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        children: steps
+            .expand(
+              (s) => [
+                _StepChip(info: s, isCurrent: s.number == step),
+                if (s.number < steps.length)
+                  Expanded(
+                    child: Container(
+                      height: 1,
+                      color: s.number < step
+                          ? AppColors.secondary.withOpacity(0.4)
+                          : AppColors.divider,
+                    ),
+                  ),
+              ],
+            )
+            .toList(),
+      ),
+    );
+  }
+}
+
+class _StepInfo {
+  final int number;
+  final String label;
+  final bool done;
+  const _StepInfo(this.number, this.label, this.done);
+}
+
+class _StepChip extends StatelessWidget {
+  final _StepInfo info;
+  final bool isCurrent;
+  const _StepChip({required this.info, required this.isCurrent});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = info.done ? AppColors.secondary : AppColors.silverRank;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            color: info.done ? AppColors.secondary : Colors.transparent,
+            border: Border.all(color: color, width: 1.5),
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: info.done && !isCurrent
+                ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
+                : Text(
+                    '${info.number}',
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: info.done ? Colors.white : color,
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          info.label,
+          style: GoogleFonts.poppins(
+            fontSize: 11.5,
+            fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+            color: isCurrent ? AppColors.secondary : color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Reset hint ───────────────────────────────────────────────
+class _ResetHint extends StatelessWidget {
+  final VoidCallback onReset;
+  const _ResetHint({required this.onReset});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onReset,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.refresh_rounded, size: 15, color: AppColors.silverRank),
+            const SizedBox(width: 6),
+            Text(
+              'Select a different group',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppColors.silverRank,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -266,17 +414,24 @@ class _GroupSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.groups_rounded,
-                  color: AppColors.secondary, size: 18),
+              Icon(Icons.groups_rounded, color: AppColors.secondary, size: 18),
               const SizedBox(width: 8),
               Text(
-                "Current Performing Group",
+                'Step 1 — Select Performing Group',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.bold,
                   fontSize: 14,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Choose the group currently performing on stage.',
+            style: GoogleFonts.poppins(
+              fontSize: 11.5,
+              color: AppColors.silverRank,
+            ),
           ),
           const SizedBox(height: 14),
           ...groups.map((group) {
@@ -287,7 +442,9 @@ class _GroupSelector extends StatelessWidget {
                 duration: const Duration(milliseconds: 200),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 11),
+                  horizontal: 14,
+                  vertical: 11,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.secondary.withOpacity(0.12)
@@ -313,7 +470,7 @@ class _GroupSelector extends StatelessWidget {
                       ),
                       child: Center(
                         child: Text(
-                          "${group.performanceOrder}",
+                          '${group.performanceOrder}',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -334,9 +491,7 @@ class _GroupSelector extends StatelessWidget {
                             style: GoogleFonts.poppins(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isSelected
-                                  ? AppColors.secondary
-                                  : null,
+                              color: isSelected ? AppColors.secondary : null,
                             ),
                           ),
                           Text(
@@ -350,11 +505,17 @@ class _GroupSelector extends StatelessWidget {
                       ),
                     ),
                     if (isSelected)
-                      Icon(Icons.radio_button_checked_rounded,
-                          color: AppColors.secondary, size: 18)
+                      Icon(
+                        Icons.radio_button_checked_rounded,
+                        color: AppColors.secondary,
+                        size: 18,
+                      )
                     else
-                      Icon(Icons.radio_button_off_rounded,
-                          color: AppColors.divider, size: 18),
+                      Icon(
+                        Icons.radio_button_off_rounded,
+                        color: AppColors.divider,
+                        size: 18,
+                      ),
                   ],
                 ),
               ),
@@ -381,6 +542,8 @@ class _CriteriaSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final allSelected = selectedIds.length == criteria.length;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -399,25 +562,37 @@ class _CriteriaSelector extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.rule_folder_rounded,
-                  color: AppColors.secondary, size: 18),
+              Icon(
+                Icons.rule_folder_rounded,
+                color: AppColors.secondary,
+                size: 18,
+              ),
               const SizedBox(width: 8),
-              Text(
-                "Active Criteria",
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
+              Expanded(
+                child: Text(
+                  'Step 2 — Active Criteria',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
-              const Spacer(),
               Text(
-                "${selectedIds.length}/${criteria.length}",
+                '${selectedIds.length} / ${criteria.length} active',
                 style: GoogleFonts.poppins(
                   fontSize: 12,
                   color: AppColors.silverRank,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Uncheck criteria you don\'t want judges to score this round.',
+            style: GoogleFonts.poppins(
+              fontSize: 11.5,
+              color: AppColors.silverRank,
+            ),
           ),
           const SizedBox(height: 14),
           ...criteria.map((c) {
@@ -428,7 +603,9 @@ class _CriteriaSelector extends StatelessWidget {
                 duration: const Duration(milliseconds: 180),
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 10),
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? AppColors.secondary.withOpacity(0.08)
@@ -464,7 +641,9 @@ class _CriteriaSelector extends StatelessWidget {
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? AppColors.secondary.withOpacity(0.12)
@@ -472,7 +651,7 @@ class _CriteriaSelector extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        "${c.weight.toStringAsFixed(0)}%",
+                        '${c.weight.toStringAsFixed(0)}%',
                         style: GoogleFonts.poppins(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -487,6 +666,27 @@ class _CriteriaSelector extends StatelessWidget {
               ),
             );
           }),
+          if (!allSelected)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 13,
+                    color: AppColors.warning,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${criteria.length - selectedIds.length} criterion hidden from judges.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -511,7 +711,6 @@ class _PushButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Color bgColor;
-    Color fgColor = Colors.white;
     Widget child;
     VoidCallback? tapHandler;
 
@@ -520,7 +719,7 @@ class _PushButton extends StatelessWidget {
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
+          const SizedBox(
             width: 18,
             height: 18,
             child: CircularProgressIndicator(
@@ -530,7 +729,7 @@ class _PushButton extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            "Syncing...",
+            'Syncing to judges…',
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.bold,
               fontSize: 15,
@@ -548,7 +747,7 @@ class _PushButton extends StatelessWidget {
           const Icon(Icons.wifi_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 10),
           Text(
-            "Pushed to Judges",
+            'Pushed to All Judges ✓',
             style: GoogleFonts.poppins(
               fontWeight: FontWeight.bold,
               fontSize: 15,
@@ -560,19 +759,30 @@ class _PushButton extends StatelessWidget {
       tapHandler = onPush;
     } else if (!isReady) {
       bgColor = AppColors.divider;
-      fgColor = AppColors.silverRank;
       child = Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.send_rounded, color: AppColors.silverRank, size: 20),
           const SizedBox(width: 10),
-          Text(
-            "Push to Judges",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: AppColors.silverRank,
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Push to Judges',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: AppColors.silverRank,
+                ),
+              ),
+              Text(
+                'Select a group first',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: AppColors.silverRank,
+                ),
+              ),
+            ],
           ),
         ],
       );
@@ -584,13 +794,22 @@ class _PushButton extends StatelessWidget {
         children: [
           const Icon(Icons.send_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 10),
-          Text(
-            "Push to Judges",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: Colors.white,
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Step 3 — Push to Judges',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                'Send group & criteria to all panels',
+                style: GoogleFonts.poppins(fontSize: 11, color: Colors.white70),
+              ),
+            ],
           ),
         ],
       );
@@ -638,15 +857,15 @@ class _ScoreDisplay extends StatelessWidget {
   });
 
   double get avgWeightedScore {
-    final submitted =
-        judgeScores.where((j) => j.isSubmitted && j.scores.isNotEmpty).toList();
+    final submitted = judgeScores
+        .where((j) => j.isSubmitted && j.scores.isNotEmpty)
+        .toList();
     if (submitted.isEmpty) return 0;
     return submitted.fold(0.0, (s, j) => s + j.totalWeighted(staticCriteria)) /
         submitted.length;
   }
 
-  int get submittedCount =>
-      judgeScores.where((j) => j.isSubmitted).length;
+  int get submittedCount => judgeScores.where((j) => j.isSubmitted).length;
 
   @override
   Widget build(BuildContext context) {
@@ -666,22 +885,24 @@ class _ScoreDisplay extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
-              Icon(Icons.live_tv_rounded,
-                  color: AppColors.primary, size: 18),
+              Icon(Icons.live_tv_rounded, color: AppColors.primary, size: 18),
               const SizedBox(width: 8),
               Text(
-                "Real-Time Score Display",
+                'Step 4 — Real-Time Scores',
                 style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold, fontSize: 14),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
               const Spacer(),
               if (group != null)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -703,27 +924,46 @@ class _ScoreDisplay extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Icon(Icons.wifi_off_rounded,
-                      size: 40, color: AppColors.divider),
-                  const SizedBox(height: 10),
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: AppColors.divider.withOpacity(0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.wifi_off_rounded,
+                      size: 28,
+                      color: AppColors.silverRank,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   Text(
                     group == null
-                        ? "Select a group and push to judges\nto start scoring."
-                        : "Waiting for push to judges...",
+                        ? 'Waiting for group selection…'
+                        : 'Group selected. Push to judges to begin scoring.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       color: AppColors.silverRank,
                       fontSize: 13,
                     ),
                   ),
+                  if (group != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      'Use the "Push to Judges" button on the left.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11.5,
+                        color: AppColors.divider,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 8),
           ] else ...[
             const SizedBox(height: 16),
-
-            // Average Score Hero
             Row(
               children: [
                 Expanded(
@@ -742,7 +982,7 @@ class _ScoreDisplay extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Average Score",
+                          'Average Score',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             color: Colors.white70,
@@ -772,7 +1012,7 @@ class _ScoreDisplay extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          "Submitted",
+                          'Judges Submitted',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             color: AppColors.silverRank,
@@ -782,7 +1022,7 @@ class _ScoreDisplay extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              "$submittedCount",
+                              '$submittedCount',
                               style: GoogleFonts.poppins(
                                 fontSize: 32,
                                 fontWeight: FontWeight.bold,
@@ -792,7 +1032,7 @@ class _ScoreDisplay extends StatelessWidget {
                             Padding(
                               padding: const EdgeInsets.only(bottom: 5),
                               child: Text(
-                                " / ${judgeScores.length}",
+                                ' / ${judgeScores.length}',
                                 style: GoogleFonts.poppins(
                                   fontSize: 16,
                                   color: AppColors.silverRank,
@@ -801,6 +1041,17 @@ class _ScoreDisplay extends StatelessWidget {
                             ),
                           ],
                         ),
+                        Text(
+                          submittedCount == judgeScores.length
+                              ? 'All judges submitted ✓'
+                              : '${judgeScores.length - submittedCount} still scoring…',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10.5,
+                            color: submittedCount == judgeScores.length
+                                ? AppColors.accentGreen
+                                : AppColors.warning,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -808,12 +1059,9 @@ class _ScoreDisplay extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 14),
-
-            // Per-Judge Score Rows
-            ...judgeScores.map((js) => _JudgeScoreRow(
-                  judgeScore: js,
-                  criteria: criteria,
-                )),
+            ...judgeScores.map(
+              (js) => _JudgeScoreRow(judgeScore: js, criteria: criteria),
+            ),
           ],
         ],
       ),
@@ -827,15 +1075,11 @@ class _JudgeScoreRow extends StatelessWidget {
   final JudgeScore judgeScore;
   final List<ActiveCriterion> criteria;
 
-  const _JudgeScoreRow({
-    required this.judgeScore,
-    required this.criteria,
-  });
+  const _JudgeScoreRow({required this.judgeScore, required this.criteria});
 
   @override
   Widget build(BuildContext context) {
-    final hasScores =
-        judgeScore.isSubmitted && judgeScore.scores.isNotEmpty;
+    final hasScores = judgeScore.isSubmitted && judgeScore.scores.isNotEmpty;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -852,9 +1096,8 @@ class _JudgeScoreRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Judge name + status
           SizedBox(
-            width: 120,
+            width: 130,
             child: Row(
               children: [
                 Container(
@@ -881,8 +1124,6 @@ class _JudgeScoreRow extends StatelessWidget {
               ],
             ),
           ),
-
-          // Per-criterion scores
           Expanded(
             child: hasScores
                 ? Wrap(
@@ -891,13 +1132,15 @@ class _JudgeScoreRow extends StatelessWidget {
                       final score = judgeScore.scores[c.id];
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.secondary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          "${c.name.split(' ').first}: ${score?.toStringAsFixed(0) ?? '-'}",
+                          '${c.name.split(' ').first}: ${score?.toStringAsFixed(0) ?? '-'}',
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             color: AppColors.secondary,
@@ -909,30 +1152,33 @@ class _JudgeScoreRow extends StatelessWidget {
                   )
                 : Text(
                     judgeScore.isSubmitted
-                        ? "Submitted — no scores yet"
-                        : "Waiting for score...",
+                        ? 'Submitted — scores processing…'
+                        : 'Waiting for judge to score…',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
                       color: AppColors.silverRank,
                     ),
                   ),
           ),
-
-          // Weighted total
           if (hasScores)
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                judgeScore.totalWeighted(staticCriteria).toStringAsFixed(1),
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
+            Tooltip(
+              message: 'Weighted total for this judge',
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  judgeScore.totalWeighted(staticCriteria).toStringAsFixed(1),
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ),
@@ -946,7 +1192,6 @@ class _JudgeScoreRow extends StatelessWidget {
 
 class _RankingBoard extends StatelessWidget {
   final List<RankingEntry> rankings;
-
   const _RankingBoard({required this.rankings});
 
   @override
@@ -969,24 +1214,31 @@ class _RankingBoard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.emoji_events_rounded,
-                  color: AppColors.goldRank, size: 18),
+              Icon(
+                Icons.emoji_events_rounded,
+                color: AppColors.goldRank,
+                size: 18,
+              ),
               const SizedBox(width: 8),
               Text(
-                "Live Rankings",
+                'Live Rankings',
                 style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold, fontSize: 14),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.live.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  "AUTO-UPDATED",
+                  'AUTO-UPDATED',
                   style: GoogleFonts.poppins(
                     fontSize: 10,
                     color: AppColors.live,
@@ -998,17 +1250,33 @@ class _RankingBoard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-
           if (rankings.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 20),
-                child: Text(
-                  "No scores submitted yet.",
-                  style: GoogleFonts.poppins(
-                    color: AppColors.silverRank,
-                    fontSize: 13,
-                  ),
+            Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.leaderboard_rounded,
+                      size: 40,
+                      color: AppColors.divider,
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'No scores submitted yet',
+                      style: GoogleFonts.poppins(
+                        color: AppColors.silverRank,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      'Rankings will appear here as judges score.',
+                      style: GoogleFonts.poppins(
+                        color: AppColors.divider,
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             )
@@ -1016,12 +1284,8 @@ class _RankingBoard extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: rankings.length,
-                separatorBuilder: (_, __) =>
-                    const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                  final entry = rankings[i];
-                  return _RankRow(entry: entry);
-                },
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, i) => _RankRow(entry: rankings[i]),
               ),
             ),
         ],
@@ -1034,7 +1298,6 @@ class _RankingBoard extends StatelessWidget {
 
 class _RankRow extends StatelessWidget {
   final RankingEntry entry;
-
   const _RankRow({required this.entry});
 
   Color get _rankColor {
@@ -1067,7 +1330,6 @@ class _RankRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Rank badge
           Container(
             width: 32,
             height: 32,
@@ -1077,10 +1339,13 @@ class _RankRow extends StatelessWidget {
             ),
             child: Center(
               child: entry.rank <= 3
-                  ? Icon(Icons.emoji_events_rounded,
-                      color: _rankColor, size: 16)
+                  ? Icon(
+                      Icons.emoji_events_rounded,
+                      color: _rankColor,
+                      size: 16,
+                    )
                   : Text(
-                      "${entry.rank}",
+                      '${entry.rank}',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
@@ -1090,8 +1355,6 @@ class _RankRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-
-          // Name + barangay
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1113,8 +1376,6 @@ class _RankRow extends StatelessWidget {
               ],
             ),
           ),
-
-          // Score bar + value
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1135,8 +1396,7 @@ class _RankRow extends StatelessWidget {
                     value: (entry.averageScore / 100).clamp(0.0, 1.0),
                     minHeight: 5,
                     backgroundColor: _rankColor.withOpacity(0.15),
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(_rankColor),
+                    valueColor: AlwaysStoppedAnimation<Color>(_rankColor),
                   ),
                 ),
               ),
