@@ -11,11 +11,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pandan_fest/admin/dance_group_management.dart';
+import 'package:pandan_fest/admin/dance_group_management.dart' hide DanceGroup;
 import 'package:pandan_fest/admin/judges.dart';
 import 'package:pandan_fest/admin/live_control_panel.dart';
-import 'package:pandan_fest/admin/results_screen.dart';
 import 'package:pandan_fest/admin/scoring_criteria_config.dart';
+import 'package:pandan_fest/admin/overall_winner_screen.dart';
 import 'package:pandan_fest/admin/settings.dart';
 import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/results/results_screen.dart';
@@ -36,13 +36,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
   int _tick = 0;
 
   static const _nav = [
-    ('Dashboard',      Icons.dashboard_rounded),
-    ('Dance Groups',   Icons.groups_rounded),
-    ('Judges',         Icons.gavel_rounded),
-    ('Criteria Setup', Icons.rule_folder_rounded),
-    ('Live Control',   Icons.live_tv_rounded),
-    ('Results',        Icons.emoji_events_rounded),
-    ('Settings',       Icons.settings_rounded),
+    ('Dashboard',       Icons.dashboard_rounded),
+    ('Dance Groups',    Icons.groups_rounded),
+    ('Judges',          Icons.gavel_rounded),
+    ('Criteria Setup',  Icons.rule_folder_rounded),
+    ('Live Control',    Icons.live_tv_rounded),
+    ('Results',         Icons.emoji_events_rounded),
+    ('Overall Winner',  Icons.workspace_premium_rounded),
+    ('Settings',        Icons.settings_rounded),
   ];
 
   @override
@@ -55,6 +56,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
   @override void dispose() { _ticker?.cancel(); super.dispose(); }
 
   int get _penaltyBadge => kGroups.where((g) => g.penalties.isNotEmpty).length;
+
+  // ================= CONTENT SWITCH =================
+  
+  Widget _page() {
+    switch (_sel) {
+      case 0: return _DashboardHome(onNavigate: (i) => setState(() => _sel = i));
+      case 1: return const DanceGroupManagement();
+      case 2: return const JudgesManagementScreen();
+      case 3: return const ScoringCriteriaConfiguration();
+      case 4: return const LiveControlPanel();
+      case 5: return const ResultsScreen();
+      case 6: return const OverallWinnerScreen();
+      case 7: return const SettingsControlsScreen();
+      default: return _DashboardHome(onNavigate: (i) => setState(() => _sel = i));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,93 +223,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ]),
     );
   }
-
-<<<<<<< HEAD
-  Widget _page() {
-    switch (_sel) {
-      case 0: return _DashboardHome(onNavigate: (i) => setState(() => _sel = i));
-      case 5: return const ResultsScreen();
-      default: return _PlaceholderPage(label: _nav[_sel].$1, icon: _nav[_sel].$2);
-    }
-  }
-=======
-  // ================= CONTENT SWITCH =================
-
-  Widget _buildContent() {
-    switch (selectedIndex) {
-      case 0:
-        return _dashboardHome();
-      case 1:
-        return const DanceGroupManagement();
-      case 2:
-        return const JudgesManagementScreen();
-      case 3:
-        return const ScoringCriteriaConfiguration();
-      case 4:
-        return const LiveControlPanel();
-      case 5:
-        return const ResultsScreen();
-      case 6:
-        return const SettingsControlsScreen();
-      default:
-        return _dashboardHome();
-    }
-  }
-
-  // ================= DASHBOARD HOME =================
-
-  Widget _dashboardHome() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          "Dashboard Overview",
-          style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 30),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              int crossAxisCount = constraints.maxWidth > 1400
-                  ? 4
-                  : constraints.maxWidth > 900
-                  ? 3
-                  : 2;
-
-              return GridView.builder(
-                itemCount: dashboardCards.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 25,
-                  mainAxisSpacing: 25,
-                  childAspectRatio: 1.6,
-                ),
-                itemBuilder: (context, index) {
-                  return DashboardCard(
-                    title: dashboardCards[index]["title"],
-                    value: dashboardCards[index]["value"],
-                    icon: dashboardCards[index]["icon"],
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  final List<Map<String, dynamic>> dashboardCards = [
-    {
-      "title": "Total Dance Groups",
-      "value": "12",
-      "icon": Icons.groups_rounded,
-    },
-    {"title": "Active Judges", "value": "5", "icon": Icons.gavel_rounded},
-    {"title": "Current Phase", "value": "Finals", "icon": Icons.flag_rounded},
-    {"title": "Live Status", "value": "Running", "icon": Icons.live_tv_rounded},
-  ];
->>>>>>> 72ae82dc392c77f7a5883f5c07b276ebcac04ec8
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -322,6 +252,19 @@ class _DashboardHome extends StatelessWidget {
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500])),
         ]),
         const Spacer(),
+        OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.secondary,
+            side: const BorderSide(color: AppColors.secondary),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          icon: const Icon(Icons.workspace_premium_rounded, size: 15),
+          label: Text('Overall Winner',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+          onPressed: () => onNavigate(6),
+        ),
+        const SizedBox(width: 10),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.primary,
@@ -403,7 +346,7 @@ class _DashboardHome extends StatelessWidget {
             SizedBox(width: 30, child: rank <= 3
                 ? Text(rank == 1 ? '🥇' : rank == 2 ? '🥈' : '🥉',
                       style: const TextStyle(fontSize: 20))
-                : Text('#\$rank', style: GoogleFonts.poppins(
+                : Text('#$rank', style: GoogleFonts.poppins(
                       fontWeight: FontWeight.bold, color: Colors.grey[400], fontSize: 12))),
             const SizedBox(width: 10),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -527,7 +470,7 @@ class _DashboardHome extends StatelessWidget {
             ?? AppColors.primary;
         final norm = rng > 0 ? 0.35 + 0.65 * (g.finalScore - mn) / rng : 1.0;
         return Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
-          SizedBox(width: 32, child: Text('#\$rank', style: GoogleFonts.poppins(
+          SizedBox(width: 32, child: Text('#$rank', style: GoogleFonts.poppins(
               fontWeight: FontWeight.bold,
               color: {1: AppColors.goldRank, 2: AppColors.silverRank, 3: AppColors.bronzeRank}[rank]
                   ?? Colors.grey[400]!, fontSize: 11))),
