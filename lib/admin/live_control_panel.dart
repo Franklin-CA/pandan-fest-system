@@ -63,13 +63,18 @@ class _LiveControlPanelState extends State<LiveControlPanel>
     if (selectedGroupId == null || activeCriteria.isEmpty) return;
     setState(() => isPushing = true);
     await Future.delayed(const Duration(milliseconds: 1200));
+    // Also push to Focal Presentation judges
+    LiveSessionState.instance.pushFocalContestant(selectedGroupId!);
     setState(() {
       isPushing = false;
       isPushedToJudges = true;
     });
   }
 
-  void _resetPush() => setState(() => isPushedToJudges = false);
+  void _resetPush() {
+    LiveSessionState.instance.clearFocalPush();
+    setState(() => isPushedToJudges = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -131,39 +136,55 @@ class _LiveControlPanelState extends State<LiveControlPanel>
             ),
             // Push Status Badge
             if (isPushedToJudges)
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.live.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: AppColors.live.withOpacity(0.4),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.live.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.live.withOpacity(0.4)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.wifi_rounded, color: AppColors.live, size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Synced to all judges",
+                          style: GoogleFonts.poppins(
+                            fontSize: 13, color: AppColors.live, fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        GestureDetector(
+                          onTap: _resetPush,
+                          child: Icon(Icons.close_rounded, color: AppColors.live, size: 16),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi_rounded,
-                        color: AppColors.live, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      "Synced to all judges",
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: AppColors.live,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF2D55).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFF2D55).withOpacity(0.4)),
                     ),
-                    const SizedBox(width: 10),
-                    GestureDetector(
-                      onTap: _resetPush,
-                      child: Icon(Icons.close_rounded,
-                          color: AppColors.live, size: 16),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.star_rounded, color: Color(0xFFFF2D55), size: 16),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Focal judges unlocked",
+                          style: GoogleFonts.poppins(
+                            fontSize: 13, color: const Color(0xFFFF2D55), fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
           ],
         ),

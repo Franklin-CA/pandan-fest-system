@@ -146,12 +146,31 @@ const List<PerformingGroup> staticGroups = [
   PerformingGroup(id: 'g4', name: 'Alon Dancers',   barangay: 'Brgy. Bagong Silang', theme: 'Contemporary Wave', performanceOrder: 4),
 ];
 
+// ── Original / generic criteria (kept for backward compat) ──
 const List<ActiveCriterion> staticCriteria = [
   ActiveCriterion(id: 'c1', name: 'Choreography',   weight: 25, maxScore: 100, description: 'Creativity, complexity, and execution of dance moves.'),
   ActiveCriterion(id: 'c2', name: 'Synchronization', weight: 20, maxScore: 100, description: 'Uniformity and timing precision among all members.'),
   ActiveCriterion(id: 'c3', name: 'Costume',         weight: 15, maxScore: 100, description: 'Visual appeal, thematic relevance, and overall presentation.'),
   ActiveCriterion(id: 'c4', name: 'Musicality',      weight: 20, maxScore: 100, description: 'Responsiveness and interpretation of the music.'),
   ActiveCriterion(id: 'c5', name: 'Overall Impact',  weight: 20, maxScore: 100, description: 'Audience engagement, energy, and stage presence.'),
+];
+
+// ── Street Dance criteria ──
+const List<ActiveCriterion> streetDanceCriteria = [
+  ActiveCriterion(id: 'sd1', name: 'Street Dance Technique',    weight: 25, maxScore: 100, description: 'Mastery of street dance styles (hip-hop, waacking, locking, popping, etc.).'),
+  ActiveCriterion(id: 'sd2', name: 'Choreography & Creativity', weight: 25, maxScore: 100, description: 'Originality, creativity, and complexity of choreography.'),
+  ActiveCriterion(id: 'sd3', name: 'Synchronization',           weight: 20, maxScore: 100, description: 'Uniformity and timing precision among all members.'),
+  ActiveCriterion(id: 'sd4', name: 'Musicality & Rhythm',       weight: 15, maxScore: 100, description: 'Responsiveness and interpretation of the music and beat.'),
+  ActiveCriterion(id: 'sd5', name: 'Costume & Presentation',    weight: 15, maxScore: 100, description: 'Visual appeal, street-themed costume, and overall stage presence.'),
+];
+
+// ── Focal Presentation criteria ──
+const List<ActiveCriterion> focalPresentationCriteria = [
+  ActiveCriterion(id: 'fp1', name: 'Focal Performance',         weight: 30, maxScore: 100, description: 'Standout execution by the designated focal performer(s).'),
+  ActiveCriterion(id: 'fp2', name: 'Artistic Expression',       weight: 25, maxScore: 100, description: 'Emotional depth, storytelling, and artistic quality of the presentation.'),
+  ActiveCriterion(id: 'fp3', name: 'Crowd Engagement',          weight: 20, maxScore: 100, description: 'Ability to captivate and engage the audience throughout the performance.'),
+  ActiveCriterion(id: 'fp4', name: 'Costume & Props',           weight: 15, maxScore: 100, description: 'Appropriateness and visual impact of costumes and props used.'),
+  ActiveCriterion(id: 'fp5', name: 'Overall Showmanship',       weight: 10, maxScore: 100, description: 'General stage presence, confidence, and entertainment value.'),
 ];
 
 // Each judge is exclusive to ONE stage

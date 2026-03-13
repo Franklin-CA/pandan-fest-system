@@ -5,11 +5,7 @@ import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/models/app_models.dart';
 import 'package:pandan_fest/services.dart';
 
-// Keep this for any legacy import references
-export 'street_dance_scoring_screen.dart' show StreetDanceScoringScreen;
-export 'focal_presentation_scoring_screen.dart' show FocalPresentationScoringScreen;
-
-enum _JudgeScreenState { selectContestant, scoring, submitted }
+enum JudgeScreenState { selectContestant, scoring, submitted }
 
 // ═══════════════════════════════════════════════════════════════════
 // TOP BAR
@@ -22,8 +18,6 @@ class JudgeTopBar extends StatelessWidget {
   final String categoryTitle;
   final IconData categoryIcon;
   final Color categoryColor;
-  final dynamic screenState;
-  final PerformingGroup? selectedGroup;
   final VoidCallback? onBack;
 
   const JudgeTopBar({
@@ -34,8 +28,6 @@ class JudgeTopBar extends StatelessWidget {
     required this.categoryTitle,
     required this.categoryIcon,
     required this.categoryColor,
-    required this.screenState,
-    required this.selectedGroup,
     this.onBack,
   });
 
@@ -73,7 +65,6 @@ class JudgeTopBar extends StatelessWidget {
             ],
           ),
           const Spacer(),
-          // Category badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -89,7 +80,6 @@ class JudgeTopBar extends StatelessWidget {
             ]),
           ),
           const SizedBox(width: 12),
-          // Live badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
@@ -106,7 +96,6 @@ class JudgeTopBar extends StatelessWidget {
             ]),
           ),
           const SizedBox(width: 16),
-          // Judge + stage
           Row(children: [
             const CircleAvatar(radius: 18, backgroundColor: Colors.white24,
                 child: Icon(Icons.gavel_rounded, color: Colors.white, size: 18)),
@@ -150,6 +139,7 @@ class JudgeContestantPicker extends StatelessWidget {
   final List<ActiveCriterion> criteria;
   final Set<String> scoredGroupIds;
   final void Function(PerformingGroup) onSelect;
+  final String? pushedGroupId; // if set, only this group can be scored
 
   const JudgeContestantPicker({
     super.key,
@@ -159,6 +149,7 @@ class JudgeContestantPicker extends StatelessWidget {
     required this.criteria,
     required this.scoredGroupIds,
     required this.onSelect,
+    this.pushedGroupId,
   });
 
   @override
@@ -243,16 +234,20 @@ class JudgeContestantPicker extends StatelessWidget {
               Text("Tap a contestant card to begin scoring. Already scored ones are marked.",
                 style: GoogleFonts.poppins(fontSize: 13, color: const Color(0xFF8E8E93))),
               const SizedBox(height: 20),
-              ...staticGroups.map((g) => Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: _ContestantCard(
-                  group: g,
-                  categoryColor: color,
-                  categoryIcon: categoryIcon,
-                  isScored: scoredGroupIds.contains(g.id),
-                  onSelect: () => onSelect(g),
-                ),
-              )),
+              ...staticGroups.map((g) {
+                final isLocked = pushedGroupId != null && g.id != pushedGroupId;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: JudgeContestantCard(
+                    group: g,
+                    categoryColor: color,
+                    categoryIcon: categoryIcon,
+                    isScored: scoredGroupIds.contains(g.id),
+                    isLocked: isLocked,
+                    onSelect: isLocked ? null : () => onSelect(g),
+                  ),
+                );
+              }),
               const SizedBox(height: 20),
             ],
           ),
@@ -262,52 +257,72 @@ class JudgeContestantPicker extends StatelessWidget {
   }
 }
 
-class _ContestantCard extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// CONTESTANT CARD
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeContestantCard extends StatefulWidget {
   final PerformingGroup group;
   final Color categoryColor;
   final IconData categoryIcon;
   final bool isScored;
-  final VoidCallback onSelect;
+  final bool isLocked;
+  final VoidCallback? onSelect;
 
-  const _ContestantCard({
-    required this.group, required this.categoryColor,
-    required this.categoryIcon, required this.isScored, required this.onSelect,
+  const JudgeContestantCard({
+    super.key,
+    required this.group,
+    required this.categoryColor,
+    required this.categoryIcon,
+    required this.isScored,
+    this.isLocked = false,
+    this.onSelect,
   });
 
   @override
-  State<_ContestantCard> createState() => _ContestantCardState();
+  State<JudgeContestantCard> createState() => _JudgeContestantCardState();
 }
 
-class _ContestantCardState extends State<_ContestantCard> {
+class _JudgeContestantCardState extends State<JudgeContestantCard> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final g = widget.group;
     final scored = widget.isScored;
-    final color = scored ? AppColors.accentGreen : widget.categoryColor;
+    final locked = widget.isLocked;
+    final color = locked
+        ? const Color(0xFFAEAEB2)
+        : scored ? AppColors.accentGreen : widget.categoryColor;
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
+      onEnter: (_) => !locked ? setState(() => _hovered = true) : null,
       onExit: (_) => setState(() => _hovered = false),
+      cursor: locked ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
       child: GestureDetector(
         onTap: widget.onSelect,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            color: _hovered
-                ? (scored ? AppColors.accentGreen.withOpacity(0.05) : widget.categoryColor.withOpacity(0.04))
-                : Colors.white,
+            color: locked
+                ? const Color(0xFFF8F8F8)
+                : _hovered
+                    ? (scored ? AppColors.accentGreen.withOpacity(0.05) : widget.categoryColor.withOpacity(0.04))
+                    : Colors.white,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: scored
-                  ? AppColors.accentGreen.withOpacity(0.4)
-                  : (_hovered ? widget.categoryColor.withOpacity(0.5) : const Color(0xFFE5E5EA)),
-              width: scored || _hovered ? 1.8 : 1,
+              color: locked
+                  ? const Color(0xFFE5E5EA)
+                  : scored
+                      ? AppColors.accentGreen.withOpacity(0.4)
+                      : (_hovered ? widget.categoryColor.withOpacity(0.5) : const Color(0xFFE5E5EA)),
+              width: (!locked && (scored || _hovered)) ? 1.8 : 1,
             ),
             boxShadow: [BoxShadow(
-              color: _hovered ? widget.categoryColor.withOpacity(0.12) : Colors.black.withOpacity(0.05),
+              color: locked
+                  ? Colors.black.withOpacity(0.02)
+                  : _hovered ? widget.categoryColor.withOpacity(0.12) : Colors.black.withOpacity(0.05),
               blurRadius: _hovered ? 16 : 8, offset: const Offset(0, 4),
             )],
           ),
@@ -318,15 +333,33 @@ class _ContestantCardState extends State<_ContestantCard> {
                 color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: color.withOpacity(0.25)),
               ),
-              child: Center(child: Text("#${g.performanceOrder}", style: GoogleFonts.poppins(
-                fontSize: 18, fontWeight: FontWeight.bold, color: color))),
+              child: locked
+                  ? const Center(child: Icon(Icons.lock_rounded, size: 20, color: Color(0xFFAEAEB2)))
+                  : Center(child: Text("#${g.performanceOrder}", style: GoogleFonts.poppins(
+                      fontSize: 18, fontWeight: FontWeight.bold, color: color))),
             ),
             const SizedBox(width: 18),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
                 Expanded(child: Text(g.name, style: GoogleFonts.poppins(
-                    fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF1C1C1E)))),
-                if (scored)
+                    fontSize: 16, fontWeight: FontWeight.bold,
+                    color: locked ? const Color(0xFFAEAEB2) : const Color(0xFF1C1C1E)))),
+                if (locked)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F2F7),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE5E5EA)),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.lock_rounded, size: 11, color: Color(0xFFAEAEB2)),
+                      const SizedBox(width: 4),
+                      Text("Not pushed", style: GoogleFonts.poppins(
+                          fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFFAEAEB2))),
+                    ]),
+                  )
+                else if (scored)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
@@ -344,41 +377,57 @@ class _ContestantCardState extends State<_ContestantCard> {
               ]),
               const SizedBox(height: 6),
               Wrap(spacing: 14, children: [
-                _chip(Icons.location_on_outlined, g.barangay),
-                _chip(Icons.palette_outlined, g.theme),
+                _chip(Icons.location_on_outlined, g.barangay, locked),
+                _chip(Icons.palette_outlined, g.theme, locked),
               ]),
             ])),
             const SizedBox(width: 16),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              decoration: BoxDecoration(
-                color: scored ? AppColors.accentGreen : (_hovered ? widget.categoryColor : widget.categoryColor.withOpacity(0.85)),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(
-                  color: (scored ? AppColors.accentGreen : widget.categoryColor).withOpacity(0.3),
-                  blurRadius: 8, offset: const Offset(0, 3),
-                )],
+            if (locked)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F2F7),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.lock_rounded, size: 16, color: Color(0xFFAEAEB2)),
+                  const SizedBox(width: 7),
+                  Text("Locked", style: GoogleFonts.poppins(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFFAEAEB2))),
+                ]),
+              )
+            else
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: scored ? AppColors.accentGreen : (_hovered ? widget.categoryColor : widget.categoryColor.withOpacity(0.85)),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [BoxShadow(
+                    color: (scored ? AppColors.accentGreen : widget.categoryColor).withOpacity(0.3),
+                    blurRadius: 8, offset: const Offset(0, 3),
+                  )],
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(scored ? Icons.edit_rounded : widget.categoryIcon, size: 16, color: Colors.white),
+                  const SizedBox(width: 7),
+                  Text(scored ? "Re-score" : "Score Now", style: GoogleFonts.poppins(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                ]),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(scored ? Icons.edit_rounded : widget.categoryIcon, size: 16, color: Colors.white),
-                const SizedBox(width: 7),
-                Text(scored ? "Re-score" : "Score Now", style: GoogleFonts.poppins(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
-              ]),
-            ),
           ]),
         ),
       ),
     );
   }
 
-  Widget _chip(IconData icon, String label) => Row(
+  Widget _chip(IconData icon, String label, [bool locked = false]) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Icon(icon, size: 13, color: const Color(0xFF8E8E93)),
+      Icon(icon, size: 13, color: locked ? const Color(0xFFD1D1D6) : const Color(0xFF8E8E93)),
       const SizedBox(width: 4),
-      Text(label, style: GoogleFonts.poppins(fontSize: 12, color: const Color(0xFF8E8E93))),
+      Text(label, style: GoogleFonts.poppins(fontSize: 12,
+          color: locked ? const Color(0xFFD1D1D6) : const Color(0xFF8E8E93))),
     ],
   );
 }
@@ -398,16 +447,24 @@ class JudgeScoringBody extends StatelessWidget {
   final int filledCount;
   final double weightedTotal;
   final bool isSubmitting;
-  final VoidCallback onBack;
+  final VoidCallback? onBack;
   final VoidCallback onSubmit;
   final void Function(String) onChanged;
 
   const JudgeScoringBody({
     super.key,
-    required this.group, required this.criteria, required this.controllers,
-    required this.errors, required this.categoryTitle, required this.categoryIcon,
-    required this.categoryColor, required this.filledCount, required this.weightedTotal,
-    required this.isSubmitting, required this.onBack, required this.onSubmit,
+    required this.group,
+    required this.criteria,
+    required this.controllers,
+    required this.errors,
+    required this.categoryTitle,
+    required this.categoryIcon,
+    required this.categoryColor,
+    required this.filledCount,
+    required this.weightedTotal,
+    required this.isSubmitting,
+    this.onBack,
+    required this.onSubmit,
     required this.onChanged,
   });
 
@@ -440,25 +497,26 @@ class JudgeScoringBody extends StatelessWidget {
                     Text("${criteria.length} criteria · ${criteria.fold(0.0, (s, c) => s + c.weight).toStringAsFixed(0)}% total weight",
                         style: GoogleFonts.poppins(fontSize: 11, color: color.withOpacity(0.7))),
                   ])),
-                  TextButton.icon(
-                    onPressed: onBack,
-                    icon: const Icon(Icons.arrow_back_ios_rounded, size: 12),
-                    label: Text("Change Contestant", style: GoogleFonts.poppins(fontSize: 12)),
-                    style: TextButton.styleFrom(foregroundColor: color),
-                  ),
+                  if (onBack != null)
+                    TextButton.icon(
+                      onPressed: onBack,
+                      icon: const Icon(Icons.arrow_back_ios_rounded, size: 12),
+                      label: Text("Change Contestant", style: GoogleFonts.poppins(fontSize: 12)),
+                      style: TextButton.styleFrom(foregroundColor: color),
+                    ),
                 ]),
               ),
               const SizedBox(height: 16),
-              _CurrentGroupCard(group: group, categoryColor: color, categoryIcon: categoryIcon, categoryTitle: categoryTitle),
+              JudgeCurrentGroupCard(group: group, categoryColor: color, categoryIcon: categoryIcon, categoryTitle: categoryTitle),
               const SizedBox(height: 24),
-              _ProgressRow(filled: filledCount, total: criteria.length),
+              JudgeProgressRow(filled: filledCount, total: criteria.length),
               const SizedBox(height: 20),
               Text("Score Each Criteria", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 4),
               Text("Enter a score from 0 to 100. Weighted total is computed automatically.",
                 style: GoogleFonts.poppins(fontSize: 13, color: AppColors.silverRank)),
               const SizedBox(height: 16),
-              ...criteria.map((c) => _CriterionRow(
+              ...criteria.map((c) => JudgeCriterionRow(
                 criterion: c,
                 controller: controllers[c.id]!,
                 errorText: errors[c.id],
@@ -466,9 +524,9 @@ class JudgeScoringBody extends StatelessWidget {
                 onChanged: (_) => onChanged(c.id),
               )),
               const SizedBox(height: 8),
-              _WeightedTotalCard(total: weightedTotal, accentColor: color),
+              JudgeWeightedTotalCard(total: weightedTotal, accentColor: color),
               const SizedBox(height: 28),
-              _SubmitButton(
+              JudgeSubmitButton(
                 isSubmitting: isSubmitting,
                 filledCount: filledCount,
                 totalCount: criteria.length,
@@ -483,15 +541,22 @@ class JudgeScoringBody extends StatelessWidget {
   }
 }
 
-class _CurrentGroupCard extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════
+// CURRENT GROUP CARD
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeCurrentGroupCard extends StatelessWidget {
   final PerformingGroup group;
   final Color categoryColor;
   final IconData categoryIcon;
   final String categoryTitle;
 
-  const _CurrentGroupCard({
-    required this.group, required this.categoryColor,
-    required this.categoryIcon, required this.categoryTitle,
+  const JudgeCurrentGroupCard({
+    super.key,
+    required this.group,
+    required this.categoryColor,
+    required this.categoryIcon,
+    required this.categoryTitle,
   });
 
   @override
@@ -560,9 +625,13 @@ class _CurrentGroupCard extends StatelessWidget {
   );
 }
 
-class _ProgressRow extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════
+// PROGRESS ROW
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeProgressRow extends StatelessWidget {
   final int filled, total;
-  const _ProgressRow({required this.filled, required this.total});
+  const JudgeProgressRow({super.key, required this.filled, required this.total});
 
   @override
   Widget build(BuildContext context) {
@@ -585,16 +654,24 @@ class _ProgressRow extends StatelessWidget {
   }
 }
 
-class _CriterionRow extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════
+// CRITERION ROW
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeCriterionRow extends StatelessWidget {
   final ActiveCriterion criterion;
   final TextEditingController controller;
   final String? errorText;
   final Color accentColor;
   final ValueChanged<String> onChanged;
 
-  const _CriterionRow({
-    required this.criterion, required this.controller,
-    required this.errorText, required this.accentColor, required this.onChanged,
+  const JudgeCriterionRow({
+    super.key,
+    required this.criterion,
+    required this.controller,
+    required this.errorText,
+    required this.accentColor,
+    required this.onChanged,
   });
 
   @override
@@ -645,7 +722,8 @@ class _CriterionRow extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
                 focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: accentColor, width: 1.5)),
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: accentColor, width: 1.5)),
               ),
             ),
             if (hasError)
@@ -662,10 +740,14 @@ class _CriterionRow extends StatelessWidget {
   }
 }
 
-class _WeightedTotalCard extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════
+// WEIGHTED TOTAL CARD
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeWeightedTotalCard extends StatelessWidget {
   final double total;
   final Color accentColor;
-  const _WeightedTotalCard({required this.total, required this.accentColor});
+  const JudgeWeightedTotalCard({super.key, required this.total, required this.accentColor});
 
   @override
   Widget build(BuildContext context) {
@@ -700,14 +782,21 @@ class _WeightedTotalCard extends StatelessWidget {
   }
 }
 
-class _SubmitButton extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════
+// SUBMIT BUTTON
+// ═══════════════════════════════════════════════════════════════════
+
+class JudgeSubmitButton extends StatelessWidget {
   final bool isSubmitting;
   final int filledCount, totalCount;
   final VoidCallback onSubmit;
 
-  const _SubmitButton({
-    required this.isSubmitting, required this.filledCount,
-    required this.totalCount, required this.onSubmit,
+  const JudgeSubmitButton({
+    super.key,
+    required this.isSubmitting,
+    required this.filledCount,
+    required this.totalCount,
+    required this.onSubmit,
   });
 
   @override
@@ -758,9 +847,15 @@ class JudgeSuccessState extends StatelessWidget {
 
   const JudgeSuccessState({
     super.key,
-    required this.group, required this.criteria, required this.controllers,
-    required this.categoryTitle, required this.categoryIcon, required this.categoryColor,
-    required this.weightedTotal, required this.scoredGroupIds, required this.onScoreAnother,
+    required this.group,
+    required this.criteria,
+    required this.controllers,
+    required this.categoryTitle,
+    required this.categoryIcon,
+    required this.categoryColor,
+    required this.weightedTotal,
+    required this.scoredGroupIds,
+    required this.onScoreAnother,
   });
 
   @override

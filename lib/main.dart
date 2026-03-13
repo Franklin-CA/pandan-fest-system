@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pandan_fest/admin/admin_dashboard.dart';
-import 'package:pandan_fest/judge/judge_scoring_screen.dart';
+import 'package:pandan_fest/judge/street_dance_scoring_screen.dart';
+import 'package:pandan_fest/judge/focal_presentation_scoring_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -21,7 +22,8 @@ class MyApp extends StatelessWidget {
       // ── Named routes ──
       routes: {
         '/': (context) => const AdminDashboard(),
-        '/judge': (context) => const JudgeScoringScreen(),
+        '/judge/streetdance': (context) => const StreetDanceScoringScreen(),
+        '/judge/focal': (context) => const FocalPresentationScoringScreen(),
       },
 
       // ── Fallback for unknown routes ──
@@ -44,29 +46,21 @@ class _NotFoundScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.error_outline_rounded,
-              size: 64,
-              color: Color(0xFFB71C1C),
-            ),
+            const Icon(Icons.error_outline_rounded, size: 64, color: Color(0xFFB71C1C)),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               "Page Not Found",
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+              style: TextStyle(fontFamily: 'Poppins', fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               "The route you accessed does not exist.",
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              style: TextStyle(fontFamily: 'Poppins', fontSize: 14, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "Available routes: /judge/streetdance  ·  /judge/focal",
+              style: TextStyle(fontFamily: 'Poppins', fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -76,13 +70,8 @@ class _NotFoundScreen extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFD700),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 14,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
