@@ -4,8 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/admin/dance_group_management.dart';
 import 'package:pandan_fest/admin/judges.dart';
 import 'package:pandan_fest/admin/live_control_panel.dart';
+import 'package:pandan_fest/admin/overall_winner_screen.dart';
 import 'package:pandan_fest/admin/results_screen.dart';
-import 'package:pandan_fest/admin/scoring_criteria_config.dart';
+import 'package:pandan_fest/admin/scoring_criteria_config.dart' hide ScoringCriteriaConfiguration;
 import 'package:pandan_fest/admin/settings.dart';
 import 'package:pandan_fest/constant/colors.dart';
 

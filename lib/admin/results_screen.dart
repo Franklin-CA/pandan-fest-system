@@ -1,451 +1,655 @@
-import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
-import 'package:pandan_fest/models/app_models.dart';
-import 'package:pandan_fest/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// ═══════════════════════════════════════════════════════════════════
-// RESULTS SCREEN — Firestore-connected
-//
-// Firestore collections consumed:
-//   dance_groups/          → group name, community (barangay), theme,
-//                            performanceOrder
-//   judge_scores/          → {judgeEmail}_{groupId} docs, each with:
-//                              judgeEmail, groupId, sessionId,
-//                              scores { criterionId: double },
-//                              weightedTotal, isSubmitted
-//   scoring_configs/       → streetDance, focalPresentation docs with
-//                              criteria list (id, name, weight, maxScore)
-//   penalties/             → auto-ID docs with:
-//                              groupId, reason, deduction, issuedBy,
-//                              createdAt, sessionId
-//   results_meta/current   → isFinalized (bool)
-//
-// All listeners are real-time (snapshots). Adding a penalty writes to
-// the penalties/ collection and the rankings recompute instantly.
-// Finalizing writes isFinalized=true to results_meta/current.
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  FIRESTORE COLLECTION: scoring_configs
+//  Document ID per category: "streetDance" | "focalPresentation" | "festivalQueen"
+//  Schema:
+//  {
+//    "category": "streetDance",
+//    "autoTotalEnabled": true,
+//    "criteria": [
+//      { "id": "sd_1", "name": "Choreography", "description": "...",
+//        "weight": 20.0, "minScore": 0.0, "maxScore": 100.0, "isActive": true }
+//    ],
+//    "updatedAt": Timestamp,
+//    "updatedBy": "admin@pandanfest.com"
+//  }
+// ═══════════════════════════════════════════════════════════════
 
-// ───────────────────────────────────────────────────────────────────
-// VIEW MODEL — assembled from Firestore, passed into pure UI widgets
-// ───────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  MODEL
+// ═══════════════════════════════════════════════════════════════
 
-class _GroupResult {
+class ScoringCriteria {
   final String id;
-  final String name;
-  final String barangay; // community field in dance_groups
-  final String theme;
-  final int performanceOrder;
+  String name;
+  String description;
+  double weight;
+  double minScore;
+  double maxScore;
+  bool isActive;
 
-  // criteria name → per-judge score map  { judgeEmail: score }
-  final Map<String, Map<String, double>> criteriaByJudge;
-
-  // penalties from the penalties/ collection
-  final List<_Penalty> penalties;
-
-  // criteria list at time of scoring (from scoring_configs)
-  final List<ActiveCriterion> criteria;
-
-  const _GroupResult({
+  ScoringCriteria({
     required this.id,
     required this.name,
-    required this.barangay,
-    required this.theme,
-    required this.performanceOrder,
-    required this.criteriaByJudge,
-    required this.penalties,
-    required this.criteria,
+    required this.description,
+    required this.weight,
+    required this.minScore,
+    required this.maxScore,
+    this.isActive = true,
   });
 
-  // ── per-judge weighted totals ─────────────────────────────────
-  // judgeEmail → their weighted total for this group
-  Map<String, double> get judgeWeightedTotals {
-    final out = <String, double>{};
-    final judgeEmails = <String>{};
-    for (final byJudge in criteriaByJudge.values) {
-      judgeEmails.addAll(byJudge.keys);
-    }
-    for (final email in judgeEmails) {
-      double total = 0;
-      for (final c in criteria) {
-        final score = criteriaByJudge[c.id]?[email] ?? 0;
-        total += score * c.weight / 100;
-      }
-      out[email] = total;
-    }
-    return out;
-  }
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'description': description,
+    'weight': weight,
+    'minScore': minScore,
+    'maxScore': maxScore,
+    'isActive': isActive,
+  };
 
-  // average weighted total across all judges who submitted
-  double get rawTotal {
-    final totals = judgeWeightedTotals.values;
-    if (totals.isEmpty) return 0;
-    return totals.reduce((a, b) => a + b) / totals.length;
-  }
-
-  double get totalPenalty => penalties.fold(0.0, (s, p) => s + p.deduction);
-
-  double get finalScore =>
-      (rawTotal - totalPenalty).clamp(0.0, double.infinity);
-
-  // average score per criterion across all judges
-  Map<String, double> get avgCriteriaScores {
-    final out = <String, double>{};
-    for (final c in criteria) {
-      final byJudge = criteriaByJudge[c.id] ?? {};
-      if (byJudge.isEmpty) {
-        out[c.name] = 0;
-      } else {
-        out[c.name] = byJudge.values.reduce((a, b) => a + b) / byJudge.length;
-      }
-    }
-    return out;
-  }
-
-  // list of judge emails who have submitted
-  List<String> get judgeEmails => judgeWeightedTotals.keys.toList();
+  factory ScoringCriteria.fromMap(Map<String, dynamic> m) => ScoringCriteria(
+    id: m['id'] as String,
+    name: m['name'] as String,
+    description: m['description'] as String? ?? '',
+    weight: (m['weight'] as num).toDouble(),
+    minScore: (m['minScore'] as num).toDouble(),
+    maxScore: (m['maxScore'] as num).toDouble(),
+    isActive: m['isActive'] as bool? ?? true,
+  );
 }
 
-class _Penalty {
-  final String docId;
-  final String groupId;
-  final String reason;
-  final double deduction;
-  final String issuedBy;
+// ═══════════════════════════════════════════════════════════════
+//  COMPETITION CATEGORY ENUM
+// ═══════════════════════════════════════════════════════════════
 
-  const _Penalty({
-    required this.docId,
-    required this.groupId,
-    required this.reason,
-    required this.deduction,
-    required this.issuedBy,
-  });
+enum CompetitionCategory { streetDance, focalPresentation, festivalQueen }
+
+extension CompetitionCategoryExt on CompetitionCategory {
+  String get label {
+    switch (this) {
+      case CompetitionCategory.streetDance:
+        return 'Street Dance';
+      case CompetitionCategory.focalPresentation:
+        return 'Focal Presentation';
+      case CompetitionCategory.festivalQueen:
+        return 'Festival Queen';
+    }
+  }
+
+  /// Firestore document ID for this category
+  String get docId {
+    switch (this) {
+      case CompetitionCategory.streetDance:
+        return 'streetDance';
+      case CompetitionCategory.focalPresentation:
+        return 'focalPresentation';
+      case CompetitionCategory.festivalQueen:
+        return 'festivalQueen';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case CompetitionCategory.streetDance:
+        return Icons.music_note_rounded;
+      case CompetitionCategory.focalPresentation:
+        return Icons.theater_comedy_rounded;
+      case CompetitionCategory.festivalQueen:
+        return Icons.stars_rounded;
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case CompetitionCategory.streetDance:
+        return AppColors.primary;
+      case CompetitionCategory.focalPresentation:
+        return AppColors.secondary;
+      case CompetitionCategory.festivalQueen:
+        return AppColors.goldRank;
+    }
+  }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// RESULTS SCREEN WIDGET
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+//  PRESET CRITERIA DATA
+// ═══════════════════════════════════════════════════════════════
 
-class ResultsScreen extends StatefulWidget {
-  const ResultsScreen({super.key});
+List<ScoringCriteria> _buildStreetDanceCriteria() => [
+  ScoringCriteria(
+    id: 'sd_1',
+    name: 'Choreography',
+    description:
+        'Creativity, synchronization, and difficulty of dance routines.',
+    weight: 20,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_2',
+    name: 'Execution',
+    description: 'Precision, timing, and overall coordination.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_3',
+    name: 'Energy and Stage Presence',
+    description: 'Enthusiasm and engagement with the audience.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_4',
+    name: 'Relevance to the Theme',
+    description:
+        'Performers must wear and use distinct costumes and props inspired by their respective culture/festival.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_5',
+    name: 'Creativity and Aesthetic',
+    description: 'Design, color harmony, and artistic impact.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_6',
+    name: 'Originality',
+    description: 'Innovative and culturally relevant music.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_7',
+    name: 'Synchronization with Movements',
+    description: 'Music and steps in perfect harmony.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_8',
+    name: 'Portrayal of Theme',
+    description: 'Adherence to the festival\'s cultural identity and story.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'sd_9',
+    name: 'Impact and Emotional Appeal',
+    description:
+        'Effectiveness in delivering a message or cultural representation.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+];
+
+List<ScoringCriteria> _buildFocalPresentationCriteria() => [
+  ScoringCriteria(
+    id: 'fp_1',
+    name: 'Relevance to the Festival Theme',
+    description:
+        'The presentation must highlight the essence of their festival, emphasizing culture, history, and local pride.',
+    weight: 15,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_2',
+    name: 'Creativity and Innovation',
+    description:
+        'Unique and fresh interpretation of the theme through storytelling and visuals.',
+    weight: 15,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_3',
+    name: 'Originality of Choreography',
+    description:
+        'Creative dance routines that blend tradition with modern techniques.',
+    weight: 15,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_4',
+    name: 'Precision and Synchronization',
+    description: 'Cohesive and well-coordinated movements.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_5',
+    name: 'Costume and Props Design',
+    description:
+        'Vibrant and artistic costumes and props that reflect their cultural traditions.',
+    weight: 15,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_6',
+    name: 'Stage Design and Presentation',
+    description:
+        'Effective use of space, props, and stage elements to enhance the performance.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_7',
+    name: 'Cultural Integrity & Overall Impact',
+    description:
+        'Authentic representation of traditions that captivate the audience and evoke emotions.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fp_8',
+    name: 'Musicality',
+    description: 'Choice of music, editing, and climatic transitions.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+];
+
+List<ScoringCriteria> _buildFestivalQueenCriteria() => [
+  ScoringCriteria(
+    id: 'fq_1',
+    name: 'Stage Presence / Personality & Performance',
+    description:
+        'Confidence, poise, and ability to showcase the dance effectively.',
+    weight: 30,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fq_2',
+    name: 'Costume Creativity & Cultural Relevance',
+    description:
+        'Uniqueness of design, innovative use of materials, overall artistic merit, and accuracy in representing cultural heritage and tradition.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+  ScoringCriteria(
+    id: 'fq_3',
+    name: 'Overall Impact',
+    description: 'Totality and overall performance/impression.',
+    weight: 10,
+    minScore: 0,
+    maxScore: 100,
+  ),
+];
+
+// Grouped category descriptions for the UI
+const Map<CompetitionCategory, List<_CategoryGroup>> _categoryGroups = {
+  CompetitionCategory.streetDance: [
+    _CategoryGroup('Street Dancing Performance', '40%', [
+      'Choreography',
+      'Execution',
+      'Energy and Stage Presence',
+    ]),
+    _CategoryGroup('Costume and Props', '20%', [
+      'Relevance to the Theme',
+      'Creativity and Aesthetic',
+    ]),
+    _CategoryGroup('Music and Rhythm', '20%', [
+      'Originality',
+      'Synchronization with Movements',
+    ]),
+    _CategoryGroup('Cultural Relevance and Storytelling', '20%', [
+      'Portrayal of Theme',
+      'Impact and Emotional Appeal',
+    ]),
+  ],
+  CompetitionCategory.focalPresentation: [
+    _CategoryGroup('Theme and Concept', '30%', [
+      'Relevance to the Festival Theme',
+      'Creativity and Innovation',
+    ]),
+    _CategoryGroup('Choreography and Execution', '25%', [
+      'Originality of Choreography',
+      'Precision and Synchronization',
+    ]),
+    _CategoryGroup('Visual Impact', '25%', [
+      'Costume and Props Design',
+      'Stage Design and Presentation',
+    ]),
+    _CategoryGroup('Cultural and Emotional Appeal', '10%', [
+      'Cultural Integrity & Overall Impact',
+    ]),
+    _CategoryGroup('Musicality', '10%', ['Musicality']),
+  ],
+  CompetitionCategory.festivalQueen: [
+    _CategoryGroup('Judging Criteria', '50%', [
+      'Stage Presence / Personality & Performance',
+      'Costume Creativity & Cultural Relevance',
+      'Overall Impact',
+    ]),
+  ],
+};
+
+class _CategoryGroup {
+  final String name;
+  final String weight;
+  final List<String> criteria;
+  const _CategoryGroup(this.name, this.weight, this.criteria);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SCREEN
+// ═══════════════════════════════════════════════════════════════
+
+class ScoringCriteriaConfiguration extends StatefulWidget {
+  const ScoringCriteriaConfiguration({super.key});
 
   @override
-  State<ResultsScreen> createState() => _ResultsScreenState();
+  State<ScoringCriteriaConfiguration> createState() =>
+      _ScoringCriteriaConfigurationState();
 }
 
-class _ResultsScreenState extends State<ResultsScreen>
-    with TickerProviderStateMixin {
-  // ── tab ───────────────────────────────────────────────────────
-  late TabController _tabController;
-  int? _expandedGroupIndex;
+class _ScoringCriteriaConfigurationState
+    extends State<ScoringCriteriaConfiguration> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // ── live pulsing ──────────────────────────────────────────────
-  bool _liveMode = true;
-  Timer? _liveTimer;
+  CompetitionCategory _activeCategory = CompetitionCategory.streetDance;
+  List<ScoringCriteria> criteriaList = [];
+  bool autoTotalEnabled = true;
 
-  // ── Firestore ─────────────────────────────────────────────────
-  final _db = FirebaseFirestore.instance;
+  // Loading / saving state
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _hasUnsavedChanges = false;
+  DateTime? _lastSaved;
+  String? _lastSavedBy;
 
-  StreamSubscription? _groupsSub;
-  StreamSubscription? _scoresSub;
-  StreamSubscription? _penaltiesSub;
-  StreamSubscription? _metaSub;
-  StreamSubscription? _criteriaSDSub;
-  StreamSubscription? _criteriaFPSub;
+  double get totalWeight =>
+      criteriaList.where((c) => c.isActive).fold(0.0, (s, c) => s + c.weight);
 
-  // ── raw Firestore data ────────────────────────────────────────
-  List<PerformingGroup> _groups = [];
+  double get _requiredWeight =>
+      _activeCategory == CompetitionCategory.festivalQueen ? 50.0 : 100.0;
 
-  // judgeScoreDocs keyed by docId = "{email}_{groupId}"
-  // each doc: { judgeEmail, groupId, scores: {criterionId: double}, weightedTotal, isSubmitted }
-  List<Map<String, dynamic>> _scoreDocs = [];
-
-  List<_Penalty> _penalties = [];
-  bool _resultsFinalized = false;
-
-  // criteria from scoring_configs (used to build the breakdown table)
-  List<ActiveCriterion> _streetDanceCriteria = streetDanceCriteria;
-  List<ActiveCriterion> _focalCriteria = focalPresentationCriteria;
-
-  // ── loading ───────────────────────────────────────────────────
-  bool _loading = true;
-
-  // ── judge names (from registry in services.dart) ──────────────
-  // All unique judge emails found in score docs
-  List<String> get _allJudgeEmails {
-    final emails = <String>{};
-    for (final doc in _scoreDocs) {
-      final email = doc['judgeEmail'] as String? ?? '';
-      if (email.isNotEmpty) emails.add(email);
-    }
-    return emails.toList()..sort();
-  }
-
-  // ── assembled view models ─────────────────────────────────────
-  List<_GroupResult> get _groupResults {
-    return _groups.map((g) {
-      // All score docs for this group
-      final docs = _scoreDocs.where(
-        (d) => d['groupId'] == g.id && (d['isSubmitted'] as bool? ?? false),
-      );
-
-      // Determine which criteria list to use based on what's in the docs
-      // (street dance criteria IDs start with 'sd_', focal with 'fp_')
-      // We build a unified criteria list from both — only show criteria
-      // that actually have scores for this group.
-      final allScoreKeys = <String>{};
-      for (final doc in docs) {
-        final scores = doc['scores'] as Map<String, dynamic>? ?? {};
-        allScoreKeys.addAll(scores.keys);
-      }
-      final isStreetDance = allScoreKeys.any((k) => k.startsWith('sd_'));
-      final criteriaList = isStreetDance
-          ? _streetDanceCriteria
-          : _focalCriteria;
-
-      // criteriaByJudge: criterionId → { judgeEmail → score }
-      final criteriaByJudge = <String, Map<String, double>>{};
-      for (final doc in docs) {
-        final email = doc['judgeEmail'] as String? ?? '';
-        final scores = doc['scores'] as Map<String, dynamic>? ?? {};
-        scores.forEach((criterionId, value) {
-          criteriaByJudge.putIfAbsent(criterionId, () => {});
-          criteriaByJudge[criterionId]![email] = (value as num).toDouble();
-        });
-      }
-
-      final groupPenalties = _penalties
-          .where((p) => p.groupId == g.id)
-          .toList();
-
-      return _GroupResult(
-        id: g.id,
-        name: g.name,
-        barangay: g.barangay,
-        theme: g.theme,
-        performanceOrder: g.performanceOrder,
-        criteriaByJudge: criteriaByJudge,
-        penalties: groupPenalties,
-        criteria: criteriaList,
-      );
-    }).toList();
-  }
-
-  List<_GroupResult> get _rankedResults {
-    final sorted = [..._groupResults];
-    sorted.sort((a, b) => b.finalScore.compareTo(a.finalScore));
-    return sorted;
-  }
-
-  int _rankOf(_GroupResult g) =>
-      _rankedResults.indexWhere((r) => r.id == g.id) + 1;
-
-  // ══════════════════════════════════════════════════════════════
-  //  LIFECYCLE
-  // ══════════════════════════════════════════════════════════════
+  bool get isWeightValid => (totalWeight - _requiredWeight).abs() < 0.01;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
-    _startLiveTimer();
-    _listenAll();
+    _loadFromFirestore(_activeCategory);
   }
 
-  void _startLiveTimer() {
-    _liveTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (_liveMode && mounted) setState(() {});
-    });
-  }
-
-  void _listenAll() {
-    // 1. dance_groups
-    _groupsSub = _db
-        .collection('dance_groups')
-        .orderBy('performanceOrder')
-        .snapshots()
-        .listen((snap) {
-          setState(() {
-            _groups = snap.docs.map((doc) {
-              final d = doc.data();
-              return PerformingGroup(
-                id: doc.id,
-                name: d['name'] as String? ?? '',
-                barangay: d['community'] as String? ?? '',
-                theme: d['theme'] as String? ?? '',
-                performanceOrder: d['performanceOrder'] as int? ?? 0,
-              );
-            }).toList();
-            _loading = false;
-          });
-        });
-
-    // 2. judge_scores — all submitted docs for this session
-    _scoresSub = _db
-        .collection('judge_scores')
-        .where('sessionId', isEqualTo: 'current')
-        .where('isSubmitted', isEqualTo: true)
-        .snapshots()
-        .listen((snap) {
-          setState(() {
-            _scoreDocs = snap.docs.map((d) => d.data()).toList();
-          });
-        });
-
-    // 3. penalties
-    _penaltiesSub = _db
-        .collection('penalties')
-        .where('sessionId', isEqualTo: 'current')
-        .orderBy('createdAt')
-        .snapshots()
-        .listen((snap) {
-          setState(() {
-            _penalties = snap.docs.map((doc) {
-              final d = doc.data();
-              return _Penalty(
-                docId: doc.id,
-                groupId: d['groupId'] as String? ?? '',
-                reason: d['reason'] as String? ?? '',
-                deduction: (d['deduction'] as num?)?.toDouble() ?? 0,
-                issuedBy: d['issuedBy'] as String? ?? '',
-              );
-            }).toList();
-          });
-        });
-
-    // 4. results_meta/current — isFinalized
-    _metaSub = _db.collection('results_meta').doc('current').snapshots().listen(
-      (snap) {
-        if (!snap.exists) return;
+  // ── Firestore: Load ────────────────────────────────────────
+  Future<void> _loadFromFirestore(CompetitionCategory category) async {
+    setState(() => _isLoading = true);
+    try {
+      final doc = await _db
+          .collection('scoring_configs')
+          .doc(category.docId)
+          .get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final rawList = List<Map<String, dynamic>>.from(data['criteria'] ?? []);
+        final loaded = rawList.map((m) => ScoringCriteria.fromMap(m)).toList();
+        final ts = data['updatedAt'] as Timestamp?;
         setState(() {
-          _resultsFinalized = snap.data()?['isFinalized'] as bool? ?? false;
-          if (_resultsFinalized) _liveMode = false;
+          criteriaList = loaded;
+          autoTotalEnabled = data['autoTotalEnabled'] as bool? ?? true;
+          _lastSaved = ts?.toDate();
+          _lastSavedBy = data['updatedBy'] as String?;
+          _hasUnsavedChanges = false;
+          _isLoading = false;
         });
-      },
-    );
-
-    // 5. scoring_configs/streetDance
-    _criteriaSDSub = _db
-        .collection('scoring_configs')
-        .doc('streetDance')
-        .snapshots()
-        .listen((snap) {
-          if (!snap.exists) return;
-          final raw = snap.data()?['criteria'] as List<dynamic>?;
-          if (raw != null) {
-            setState(() {
-              _streetDanceCriteria = raw
-                  .map(
-                    (e) => ActiveCriterion.fromMap(e as Map<String, dynamic>),
-                  )
-                  .toList();
-            });
-          }
+      } else {
+        // No document yet — load the preset as default
+        final preset = _getPreset(category);
+        setState(() {
+          criteriaList = preset;
+          autoTotalEnabled = true;
+          _lastSaved = null;
+          _lastSavedBy = null;
+          _hasUnsavedChanges = true; // Encourage saving the defaults
+          _isLoading = false;
         });
-
-    // 6. scoring_configs/focalPresentation
-    _criteriaFPSub = _db
-        .collection('scoring_configs')
-        .doc('focalPresentation')
-        .snapshots()
-        .listen((snap) {
-          if (!snap.exists) return;
-          final raw = snap.data()?['criteria'] as List<dynamic>?;
-          if (raw != null) {
-            setState(() {
-              _focalCriteria = raw
-                  .map(
-                    (e) => ActiveCriterion.fromMap(e as Map<String, dynamic>),
-                  )
-                  .toList();
-            });
-          }
-        });
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('Failed to load criteria: $e');
+    }
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _liveTimer?.cancel();
-    _groupsSub?.cancel();
-    _scoresSub?.cancel();
-    _penaltiesSub?.cancel();
-    _metaSub?.cancel();
-    _criteriaSDSub?.cancel();
-    _criteriaFPSub?.cancel();
-    super.dispose();
+  // ── Firestore: Save ────────────────────────────────────────
+  Future<void> _saveToFirestore() async {
+    if (!isWeightValid) {
+      _showError('Total weight must equal 100% before saving.');
+      return;
+    }
+    final user = _auth.currentUser;
+    if (user == null) {
+      _showError('You must be signed in to save criteria.');
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      // ── Fetch admin name from users collection ──
+      String updatedBy = user.email ?? user.uid; // fallback
+      final userDoc = await _db.collection('users').doc(user.uid).get();
+      if (userDoc.exists) {
+        final fetchedName = userDoc.data()?['name'] as String?;
+        if (fetchedName != null && fetchedName.trim().isNotEmpty) {
+          updatedBy = fetchedName.trim();
+        }
+      }
+
+      await _db.collection('scoring_configs').doc(_activeCategory.docId).set({
+        'category': _activeCategory.docId,
+        'autoTotalEnabled': autoTotalEnabled,
+        'criteria': criteriaList.map((c) => c.toMap()).toList(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedBy': updatedBy, // ← now uses name instead of email
+      });
+      setState(() {
+        _isSaving = false;
+        _hasUnsavedChanges = false;
+        _lastSaved = DateTime.now();
+        _lastSavedBy = updatedBy; // ← also update local display
+      });
+      _showSuccess('Criteria saved and pushed to judges.');
+    } catch (e) {
+      setState(() => _isSaving = false);
+      _showError('Failed to save: $e');
+    }
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  FIRESTORE WRITE ACTIONS
-  // ══════════════════════════════════════════════════════════════
-
-  Future<void> _finalizeResults() async {
-    await _db.collection('results_meta').doc('current').set({
-      'isFinalized': true,
-      'finalizedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+  List<ScoringCriteria> _getPreset(CompetitionCategory category) {
+    switch (category) {
+      case CompetitionCategory.streetDance:
+        return _buildStreetDanceCriteria();
+      case CompetitionCategory.focalPresentation:
+        return _buildFocalPresentationCriteria();
+      case CompetitionCategory.festivalQueen:
+        return _buildFestivalQueenCriteria();
+    }
   }
 
-  Future<void> _addPenalty({
-    required String groupId,
-    required String reason,
-    required double deduction,
-    required String issuedBy,
-  }) async {
-    await _db.collection('penalties').add({
-      'groupId': groupId,
-      'reason': reason,
-      'deduction': deduction,
-      'issuedBy': issuedBy,
-      'sessionId': 'current',
-      'createdAt': FieldValue.serverTimestamp(),
+  void _loadPreset(CompetitionCategory category) {
+    setState(() {
+      _activeCategory = category;
+      criteriaList = [];
+      _isLoading = true;
+      _hasUnsavedChanges = false;
     });
+    _loadFromFirestore(category);
   }
 
-  Future<void> _deletePenalty(String docId) async {
-    await _db.collection('penalties').doc(docId).delete();
+  void _markDirty() => setState(() => _hasUnsavedChanges = true);
+
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: AppColors.danger,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  BUILD
-  // ══════════════════════════════════════════════════════════════
+  void _showSuccess(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: AppColors.accentGreen,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 30),
       children: [
         _buildHeader(),
-        const SizedBox(height: 20),
-        _buildTabBar(),
-        const SizedBox(height: 20),
-        Expanded(
-          child: TabBarView(
-            controller: _tabController,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              _buildLiveRankingTab(),
-              _buildJudgeBreakdownTab(),
-              _buildPenaltiesTab(),
-              _buildExportTab(),
-            ],
-          ),
-        ),
+        const SizedBox(height: 16),
+        _buildCategorySelector(),
+        const SizedBox(height: 14),
+        if (!_isLoading) _buildCategoryOverview(),
+        if (!_isLoading) const SizedBox(height: 12),
+        if (!_isLoading) _buildSummaryRow(),
+        if (!_isLoading) const SizedBox(height: 12),
+        if (!_isLoading) _buildAutoTotalBanner(),
+        if (!_isLoading && !isWeightValid) ...[
+          const SizedBox(height: 10),
+          _buildWeightWarning(),
+        ],
+        if (!_isLoading) _buildSaveBar(),
+        const SizedBox(height: 14),
+        if (_isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(
+              child: CircularProgressIndicator(color: AppColors.secondary),
+            ),
+          )
+        else if (criteriaList.isEmpty)
+          _buildEmptyState()
+        else
+          _buildList(),
       ],
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  HEADER
-  // ─────────────────────────────────────────────
+  // ── Save Bar ──────────────────────────────────────────────────
+  Widget _buildSaveBar() {
+    String statusText;
+    Color statusColor;
+    IconData statusIcon;
 
+    if (_isSaving) {
+      statusText = 'Saving to Firestore…';
+      statusColor = AppColors.secondary;
+      statusIcon = Icons.cloud_upload_rounded;
+    } else if (_hasUnsavedChanges) {
+      statusText = 'You have unsaved changes';
+      statusColor = AppColors.warning;
+      statusIcon = Icons.edit_rounded;
+    } else if (_lastSaved != null) {
+      final time = _lastSaved!;
+      final formatted =
+          '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
+      statusText =
+          'Saved at $formatted${_lastSavedBy != null ? ' by $_lastSavedBy' : ''}';
+      statusColor = AppColors.accentGreen;
+      statusIcon = Icons.cloud_done_rounded;
+    } else {
+      statusText = 'Not yet saved to Firestore';
+      statusColor = AppColors.silverRank;
+      statusIcon = Icons.cloud_off_rounded;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        decoration: BoxDecoration(
+          color: statusColor.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: statusColor.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(statusIcon, size: 16, color: statusColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                statusText,
+                style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  color: statusColor,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            if (_hasUnsavedChanges && !_isSaving)
+              ElevatedButton.icon(
+                onPressed: _saveToFirestore,
+                icon: const Icon(Icons.cloud_upload_rounded, size: 16),
+                label: Text(
+                  'Save & Publish',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isWeightValid
+                      ? AppColors.secondary
+                      : AppColors.divider,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            if (_isSaving)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.secondary,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Row(
       children: [
@@ -454,953 +658,51 @@ class _ResultsScreenState extends State<ResultsScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Results & Rankings',
+                'Scoring Criteria Setup',
                 style: GoogleFonts.poppins(
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
                 ),
               ),
-              const SizedBox(height: 4),
               Text(
-                'PandanFest 2026 · Street Dance Competition · Finals',
+                'Configure and publish criteria to Firestore. Judges will see changes in real-time.',
                 style: GoogleFonts.poppins(
-                  fontSize: 14,
+                  fontSize: 13,
                   color: Colors.grey[600],
                 ),
               ),
             ],
           ),
         ),
-        _buildLiveToggle(),
-        const SizedBox(width: 12),
-        _buildStatusBadge(),
-        const SizedBox(width: 12),
         ElevatedButton.icon(
+          onPressed: () => _showDialog(context, null),
+          icon: const Icon(Icons.add_rounded),
+          label: Text('Add Criteria', style: GoogleFonts.poppins()),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _resultsFinalized
-                ? Colors.grey[300]
-                : AppColors.primary,
-            foregroundColor: _resultsFinalized ? Colors.grey : Colors.white,
+            backgroundColor: AppColors.secondary,
+            foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            elevation: 0,
           ),
-          icon: Icon(
-            _resultsFinalized ? Icons.lock_rounded : Icons.lock_open_rounded,
-            size: 18,
-          ),
-          label: Text(
-            _resultsFinalized ? 'Locked' : 'Finalize Results',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-          ),
-          onPressed: _resultsFinalized
-              ? null
-              : () => showDialog(
-                  context: context,
-                  builder: (_) => _buildFinalizeDialog(),
-                ),
         ),
       ],
     );
   }
 
-  Widget _buildLiveToggle() {
-    return GestureDetector(
-      onTap: _resultsFinalized
-          ? null
-          : () => setState(() => _liveMode = !_liveMode),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: _liveMode
-              ? AppColors.live.withOpacity(0.12)
-              : Colors.grey[100],
-          borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: _liveMode ? AppColors.live : Colors.grey[300]!,
-          ),
-        ),
-        child: Row(
-          children: [
-            if (_liveMode)
-              _PulsingDot(color: AppColors.live)
-            else
-              Icon(
-                Icons.pause_circle_outline_rounded,
-                size: 14,
-                color: Colors.grey[500],
-              ),
-            const SizedBox(width: 6),
-            Text(
-              _liveMode ? 'LIVE' : 'PAUSED',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: _liveMode ? AppColors.live : Colors.grey[500],
-                letterSpacing: 1,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusBadge() {
+  // ── Category Selector ─────────────────────────────────────────
+  Widget _buildCategorySelector() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: _resultsFinalized
-            ? AppColors.accentGreen.withOpacity(0.1)
-            : AppColors.warning.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: _resultsFinalized ? AppColors.accentGreen : AppColors.warning,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            _resultsFinalized
-                ? Icons.check_circle_rounded
-                : Icons.pending_rounded,
-            color: _resultsFinalized
-                ? AppColors.accentGreen
-                : AppColors.warning,
-            size: 16,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            _resultsFinalized ? 'Finalized' : 'Tabulating…',
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: _resultsFinalized
-                  ? AppColors.accentGreen
-                  : AppColors.warning,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─────────────────────────────────────────────
-  //  TAB BAR
-  // ─────────────────────────────────────────────
-
-  Widget _buildTabBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: TabBar(
-        controller: _tabController,
-        indicator: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        indicatorSize: TabBarIndicatorSize.tab,
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey[600],
-        labelStyle: GoogleFonts.poppins(
-          fontWeight: FontWeight.w600,
-          fontSize: 13,
-        ),
-        unselectedLabelStyle: GoogleFonts.poppins(
-          fontWeight: FontWeight.w400,
-          fontSize: 13,
-        ),
-        padding: const EdgeInsets.all(6),
-        tabs: const [
-          Tab(text: '🏆  Live Rankings'),
-          Tab(text: '👨‍⚖️  Judge Breakdown'),
-          Tab(text: '⚠️  Deductions'),
-          Tab(text: '📤  Export'),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  TAB 1 — LIVE RANKING BOARD
-  // ═══════════════════════════════════════════════════════════════
-
-  Widget _buildLiveRankingTab() {
-    final ranked = _rankedResults;
-    if (ranked.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.leaderboard_rounded, size: 56, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              'No scores submitted yet.',
-              style: GoogleFonts.poppins(fontSize: 16, color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Rankings will appear once judges start submitting scores.',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[400]),
-            ),
-          ],
-        ),
-      );
-    }
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: ranked.length,
-      itemBuilder: (ctx, i) => _buildLeaderboardRow(ranked[i], i),
-    );
-  }
-
-  Widget _buildLeaderboardRow(_GroupResult group, int listIndex) {
-    final isExpanded = _expandedGroupIndex == listIndex;
-    final rank = _rankOf(group);
-    final rankColors = {
-      1: AppColors.goldRank,
-      2: AppColors.silverRank,
-      3: AppColors.bronzeRank,
-    };
-    final rc = rankColors[rank] ?? Colors.grey[400]!;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 250),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: rank <= 3
-            ? Border.all(color: rc.withOpacity(0.35), width: 1.5)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => setState(
-              () => _expandedGroupIndex = isExpanded ? null : listIndex,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  // Rank badge
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: rank <= 3
-                          ? rc.withOpacity(0.15)
-                          : Colors.grey[100],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: rank <= 3
-                          ? Text(
-                              rank == 1
-                                  ? '🥇'
-                                  : rank == 2
-                                  ? '🥈'
-                                  : '🥉',
-                              style: const TextStyle(fontSize: 22),
-                            )
-                          : Text(
-                              '#$rank',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
-                                color: Colors.grey[600],
-                                fontSize: 14,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              group.name,
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            if (group.penalties.isNotEmpty) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.danger.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.warning_amber_rounded,
-                                      size: 11,
-                                      color: AppColors.danger,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      '-${group.totalPenalty.toStringAsFixed(1)}',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 11,
-                                        color: AppColors.danger,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.location_on_rounded,
-                              size: 13,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              group.barangay,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.accentGreen.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                group.theme,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 11,
-                                  color: AppColors.accentGreen,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                            // Judge submission count
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.gavel_rounded,
-                              size: 12,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              '${group.judgeEmails.length} judge(s)',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.grey[400],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Score column
-                  SizedBox(
-                    width: 200,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            if (group.totalPenalty > 0) ...[
-                              Text(
-                                group.rawTotal.toStringAsFixed(2),
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.grey[400],
-                                  decoration: TextDecoration.lineThrough,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                            Text(
-                              group.judgeEmails.isEmpty
-                                  ? 'Awaiting…'
-                                  : '${group.finalScore.toStringAsFixed(2)} pts',
-                              style: GoogleFonts.poppins(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15,
-                                color: group.judgeEmails.isEmpty
-                                    ? Colors.grey[400]
-                                    : (rank <= 3 ? rc : Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (group.judgeEmails.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (group.finalScore / 100).clamp(0.0, 1.0),
-                              backgroundColor: Colors.grey[200],
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                rank <= 3 ? rc : AppColors.primary,
-                              ),
-                              minHeight: 6,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Icon(
-                    isExpanded
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: Colors.grey[400],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isExpanded) _buildQuickCriteriaExpand(group),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickCriteriaExpand(_GroupResult group) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.background,
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(16),
-          bottomRight: Radius.circular(16),
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Divider(),
-          const SizedBox(height: 8),
-          Text(
-            'Average Criteria Scores',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              color: Colors.grey[700],
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...group.avgCriteriaScores.entries.map(
-            (e) => Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 180,
-                    child: Text(
-                      e.key,
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: (e.value / 100).clamp(0.0, 1.0),
-                        backgroundColor: Colors.grey[200],
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          AppColors.accentGreen,
-                        ),
-                        minHeight: 8,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    e.value.toStringAsFixed(2),
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  TAB 2 — JUDGE SCORE BREAKDOWN
-  // ═══════════════════════════════════════════════════════════════
-
-  Widget _buildJudgeBreakdownTab() {
-    final ranked = _rankedResults;
-    if (ranked.isEmpty) {
-      return Center(
-        child: Text(
-          'No judge scores yet.',
-          style: GoogleFonts.poppins(fontSize: 15, color: Colors.grey[400]),
-        ),
-      );
-    }
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: ranked.map((g) => _buildGroupJudgeCard(g)).toList(),
-      ),
-    );
-  }
-
-  Widget _buildGroupJudgeCard(_GroupResult group) {
-    final rank = _rankOf(group);
-    // Build list of judge emails who have submitted for this group
-    final judgeEmails = group.judgeEmails;
-    final criteria = group.criteria;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Card header
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '#$rank',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        group.name,
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                      Text(
-                        '${group.barangay} · ${group.theme}',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Final Score',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white54,
-                        fontSize: 11,
-                      ),
-                    ),
-                    Text(
-                      judgeEmails.isEmpty
-                          ? '—'
-                          : group.finalScore.toStringAsFixed(2),
-                      style: GoogleFonts.poppins(
-                        color: AppColors.secondary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (judgeEmails.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                'No scores submitted yet.',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: Colors.grey[400],
-                ),
-              ),
-            )
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Table(
-                  defaultColumnWidth: const IntrinsicColumnWidth(),
-                  border: TableBorder.all(
-                    color: Colors.grey[200]!,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  children: [
-                    // Header row
-                    TableRow(
-                      decoration: BoxDecoration(color: Colors.grey[50]),
-                      children: [
-                        _tableHeader('Judge'),
-                        ...criteria.map((c) => _tableHeader(c.name)),
-                        _tableHeader('Weighted Total'),
-                      ],
-                    ),
-                    // One row per judge
-                    ...judgeEmails.map((email) {
-                      final judgeTotal = group.judgeWeightedTotals[email] ?? 0;
-                      return TableRow(
-                        children: [
-                          _tableCell(
-                            resolveJudgeName(email),
-                            bold: true,
-                            color: Colors.grey[700]!,
-                          ),
-                          ...criteria.map((c) {
-                            final score =
-                                group.criteriaByJudge[c.id]?[email] ?? 0;
-                            return _tableCellScore(score);
-                          }),
-                          _tableCell(
-                            judgeTotal.toStringAsFixed(2),
-                            bold: true,
-                            color: AppColors.primary,
-                          ),
-                        ],
-                      );
-                    }),
-                    // Average row
-                    TableRow(
-                      decoration: const BoxDecoration(color: Color(0xFFFFF8E1)),
-                      children: [
-                        _tableCell(
-                          'Average',
-                          bold: true,
-                          color: Colors.black87,
-                        ),
-                        ...criteria.map((c) {
-                          final avg = group.avgCriteriaScores[c.name] ?? 0;
-                          return _tableCell(
-                            avg.toStringAsFixed(2),
-                            bold: true,
-                            color: AppColors.accentGreen,
-                          );
-                        }),
-                        _tableCell(
-                          group.rawTotal.toStringAsFixed(2),
-                          bold: true,
-                          color: AppColors.accentGreen,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tableHeader(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Text(
-        text,
-        style: GoogleFonts.poppins(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: Colors.grey[600],
-        ),
-      ),
-    );
-  }
-
-  Widget _tableCell(
-    String text, {
-    bool bold = false,
-    Color color = Colors.black87,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Text(
-        text,
-        style: GoogleFonts.poppins(
-          fontSize: 13,
-          fontWeight: bold ? FontWeight.bold : FontWeight.w400,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  Widget _tableCellScore(double score) {
-    Color bg;
-    Color fg;
-    if (score >= 80) {
-      bg = AppColors.accentGreen.withOpacity(0.08);
-      fg = AppColors.accentGreen;
-    } else if (score >= 60) {
-      bg = AppColors.warning.withOpacity(0.08);
-      fg = AppColors.warning;
-    } else {
-      bg = AppColors.danger.withOpacity(0.08);
-      fg = AppColors.danger;
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          score.toStringAsFixed(1),
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: fg,
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  TAB 3 — PENALTIES / DEDUCTIONS
-  // ═══════════════════════════════════════════════════════════════
-
-  Widget _buildPenaltiesTab() {
-    final ranked = _rankedResults;
-    final withPenalty = ranked.where((g) => g.penalties.isNotEmpty).toList();
-    final clean = ranked.where((g) => g.penalties.isEmpty).toList();
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPenaltySummaryBanner(),
-          const SizedBox(height: 20),
-          if (!_resultsFinalized) ...[
-            _buildAddPenaltyButton(),
-            const SizedBox(height: 20),
-          ],
-          if (withPenalty.isNotEmpty) ...[
-            _sectionLabel(
-              '⚠️  Groups with Deductions',
-              color: AppColors.danger,
-            ),
-            const SizedBox(height: 12),
-            ...withPenalty.map(
-              (g) => _buildPenaltyGroupCard(g, hasPenalty: true),
-            ),
-            const SizedBox(height: 20),
-          ],
-          _sectionLabel('✅  No Deductions', color: AppColors.accentGreen),
-          const SizedBox(height: 12),
-          ...clean.map((g) => _buildPenaltyGroupCard(g, hasPenalty: false)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPenaltySummaryBanner() {
-    final totalDeductions = _rankedResults.fold(
-      0.0,
-      (s, g) => s + g.totalPenalty,
-    );
-    final affectedCount = _rankedResults
-        .where((g) => g.penalties.isNotEmpty)
-        .length;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.danger.withOpacity(0.08),
-            AppColors.warning.withOpacity(0.06),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.danger.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.gavel_rounded, color: AppColors.danger, size: 32),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Penalty Overview',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
-                ),
-                Text(
-                  '$affectedCount group(s) received deductions · '
-                  '${totalDeductions.toStringAsFixed(1)} total points deducted',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'Total Deducted',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: Colors.grey[500],
-                ),
-              ),
-              Text(
-                '-${totalDeductions.toStringAsFixed(1)}',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 24,
-                  color: AppColors.danger,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAddPenaltyButton() {
-    return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(
-        foregroundColor: AppColors.danger,
-        side: const BorderSide(color: AppColors.danger),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      icon: const Icon(Icons.add_circle_outline_rounded, size: 18),
-      label: Text(
-        'Add Penalty / Deduction',
-        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-      ),
-      onPressed: () => showDialog(
-        context: context,
-        builder: (_) => _buildAddPenaltyDialog(),
-      ),
-    );
-  }
-
-  Widget _buildPenaltyGroupCard(
-    _GroupResult group, {
-    required bool hasPenalty,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: hasPenalty
-            ? Border.all(color: AppColors.danger.withOpacity(0.25), width: 1.5)
-            : null,
-        boxShadow: [
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            blurRadius: 10,
+            color: AppColors.shadow,
+            offset: Offset(0, 4),
           ),
         ],
       ),
@@ -1409,177 +711,289 @@ class _ResultsScreenState extends State<ResultsScreen>
         children: [
           Row(
             children: [
-              Text(
-                '#${_rankOf(group)}',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[500],
-                  fontSize: 13,
+              Icon(
+                Icons.category_rounded,
+                color: AppColors.secondary,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Competition Category',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                group.name,
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 15,
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.warning.withOpacity(0.3)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.swap_horiz_rounded,
+                      size: 13,
+                      color: AppColors.warning,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Switching loads from Firestore',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              if (hasPenalty)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: CompetitionCategory.values.map((cat) {
+              final isActive = _activeCategory == cat;
+              return Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: cat != CompetitionCategory.values.last ? 10 : 0,
                   ),
-                  decoration: BoxDecoration(
-                    color: AppColors.danger.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '-${group.totalPenalty.toStringAsFixed(1)} pts',
-                    style: GoogleFonts.poppins(
-                      color: AppColors.danger,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                  child: GestureDetector(
+                    onTap: () {
+                      if (!isActive) {
+                        if (_hasUnsavedChanges) {
+                          _confirmCategorySwitch(cat);
+                        } else {
+                          _loadPreset(cat);
+                        }
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 14,
+                        horizontal: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? cat.color.withOpacity(0.12)
+                            : AppColors.background,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isActive ? cat.color : AppColors.divider,
+                          width: isActive ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: isActive
+                                  ? cat.color.withOpacity(0.15)
+                                  : AppColors.divider.withOpacity(0.4),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              cat.icon,
+                              color: isActive
+                                  ? cat.color
+                                  : AppColors.silverRank,
+                              size: 20,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            cat.label,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: isActive
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: isActive
+                                  ? cat.color
+                                  : AppColors.silverRank,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          if (isActive) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              width: 24,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color: cat.color,
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                )
-              else
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Category Overview ─────────────────────────────────────────
+  Widget _buildCategoryOverview() {
+    final groups = _categoryGroups[_activeCategory] ?? [];
+    final color = _activeCategory.color;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_activeCategory.icon, color: color, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${_activeCategory.label} — Category Breakdown',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                    color: color,
+                  ),
+                ),
+              ),
+              if (_activeCategory == CompetitionCategory.festivalQueen)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+                    horizontal: 8,
+                    vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.accentGreen.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
+                    color: AppColors.goldRank.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    'Clean',
+                    'Total: 50%',
                     style: GoogleFonts.poppins(
-                      color: AppColors.accentGreen,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.goldRank,
                     ),
                   ),
                 ),
             ],
           ),
-          if (hasPenalty) ...[
-            const SizedBox(height: 12),
-            ...group.penalties.asMap().entries.map((entry) {
-              final i = entry.key;
-              final p = entry.value;
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: groups.map((g) {
               return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: AppColors.danger.withOpacity(0.04),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.danger.withOpacity(0.15)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
-                child: Row(
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.15)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          '${i + 1}',
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          g.name,
                           style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.danger,
                             fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            p.reason,
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            g.weight,
                             style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.w500,
-                              fontSize: 13,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: color,
                             ),
                           ),
-                          Text(
-                            'Issued by: ${p.issuedBy}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Delete button (only before finalized)
-                    if (!_resultsFinalized) ...[
-                      IconButton(
-                        icon: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 18,
-                          color: AppColors.danger,
                         ),
-                        tooltip: 'Remove penalty',
-                        onPressed: () async {
-                          await _deletePenalty(p.docId);
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              _snackBar(
-                                'Penalty removed.',
-                                AppColors.accentGreen,
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    ...g.criteria.map(
+                      (c) => Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.arrow_right_rounded,
+                              size: 14,
+                              color: AppColors.silverRank,
+                            ),
+                            Text(
+                              c,
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: AppColors.silverRank,
                               ),
-                            );
-                          }
-                        },
-                      ),
-                    ],
-                    Text(
-                      '-${p.deduction.toStringAsFixed(1)}',
-                      style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
-                        color: AppColors.danger,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
                 ),
               );
-            }),
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
+            }).toList(),
+          ),
+          if (_activeCategory == CompetitionCategory.focalPresentation) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.danger.withOpacity(0.2)),
+              ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Text(
-                    'Raw: ${group.rawTotal.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                    ),
-                  ),
+                  Icon(Icons.gavel_rounded, size: 14, color: AppColors.danger),
                   const SizedBox(width: 8),
-                  const Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 14,
-                    color: Colors.grey,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Final: ${group.finalScore.toStringAsFixed(2)}',
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: AppColors.primary,
+                  Expanded(
+                    child: Text(
+                      'Grounds for Disqualification: (1) Execution of dangerous/aerial stunts. (2) Unruliness/failure to observe sportsman-like conduct.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: AppColors.danger,
+                      ),
                     ),
                   ),
                 ],
@@ -1591,483 +1005,127 @@ class _ResultsScreenState extends State<ResultsScreen>
     );
   }
 
-  Widget _buildAddPenaltyDialog() {
-    String? selectedGroupId;
-    final reasonController = TextEditingController();
-    final deductionController = TextEditingController();
-    String? selectedIssuer;
-    bool saving = false;
-
-    final judgeNames = ['Head Judge', ..._allJudgeEmails.map(resolveJudgeName)];
-    final judgeValues = ['Head Judge', ..._allJudgeEmails];
-
-    return StatefulBuilder(
-      builder: (ctx, setD) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              const Icon(Icons.warning_amber_rounded, color: AppColors.danger),
-              const SizedBox(width: 10),
-              Text(
-                'Add Penalty / Deduction',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: SizedBox(
-            width: 420,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Group dropdown (from Firestore groups)
-                DropdownButtonFormField<String>(
-                  decoration: _inputDecoration('Dance Group'),
-                  items: _groups
-                      .map(
-                        (g) => DropdownMenuItem(
-                          value: g.id,
-                          child: Text(
-                            g.name,
-                            style: GoogleFonts.poppins(fontSize: 13),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setD(() => selectedGroupId = v),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: reasonController,
-                  decoration: _inputDecoration('Reason for Deduction'),
-                  style: GoogleFonts.poppins(fontSize: 13),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: deductionController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: _inputDecoration('Deduction Points (e.g. 1.0)'),
-                  style: GoogleFonts.poppins(fontSize: 13),
-                ),
-                const SizedBox(height: 14),
-                DropdownButtonFormField<String>(
-                  decoration: _inputDecoration('Issued By'),
-                  items: List.generate(judgeNames.length, (i) {
-                    return DropdownMenuItem(
-                      value: judgeValues[i],
-                      child: Text(
-                        judgeNames[i],
-                        style: GoogleFonts.poppins(fontSize: 13),
-                      ),
-                    );
-                  }),
-                  onChanged: (v) => setD(() => selectedIssuer = v),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.poppins(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.danger,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      final groupId = selectedGroupId;
-                      final reason = reasonController.text.trim();
-                      final deduction = double.tryParse(
-                        deductionController.text.trim(),
-                      );
-                      final issuer = selectedIssuer;
-
-                      if (groupId == null ||
-                          reason.isEmpty ||
-                          deduction == null ||
-                          issuer == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          _snackBar(
-                            'Please fill in all fields.',
-                            AppColors.warning,
-                          ),
-                        );
-                        return;
-                      }
-
-                      setD(() => saving = true);
-                      await _addPenalty(
-                        groupId: groupId,
-                        reason: reason,
-                        deduction: deduction,
-                        issuedBy: issuer,
-                      );
-
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          _snackBar('Penalty recorded.', AppColors.danger),
-                        );
-                      }
-                    },
-              child: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Text(
-                      'Apply Penalty',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-            ),
-          ],
-        );
-      },
+  // ── Summary Row ───────────────────────────────────────────────
+  Widget _buildSummaryRow() {
+    return Row(
+      children: [
+        _SummaryCard(
+          label: 'Total Criteria',
+          value: '${criteriaList.length}',
+          icon: Icons.rule_folder_rounded,
+          color: AppColors.secondary,
+        ),
+        const SizedBox(width: 14),
+        _SummaryCard(
+          label: 'Active (Used in Scoring)',
+          value: '${criteriaList.where((c) => c.isActive).length}',
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.accentGreen,
+        ),
+        const SizedBox(width: 14),
+        _WeightCard(
+          total: totalWeight,
+          isValid: isWeightValid,
+          required: _requiredWeight,
+        ),
+      ],
     );
   }
 
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: GoogleFonts.poppins(fontSize: 13),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  //  TAB 4 — EXPORT (UI stubs — wire real export logic here)
-  // ═══════════════════════════════════════════════════════════════
-
-  Widget _buildExportTab() {
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionLabel('📄  Generate PDF Report'),
-          const SizedBox(height: 14),
-          _buildExportCard(
-            icon: Icons.picture_as_pdf_rounded,
-            iconColor: const Color(0xFFE53935),
-            title: 'Official Results Report (PDF)',
-            description:
-                'Full official report with rankings, criteria scores, judge breakdown, and penalty records.',
-            tags: ['Rankings', 'Criteria', 'Judges', 'Penalties'],
-            buttonLabel: 'Generate PDF',
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              _snackBar('PDF report generated!', AppColors.accentGreen),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _buildExportCard(
-            icon: Icons.leaderboard_rounded,
-            iconColor: const Color(0xFF1565C0),
-            title: 'Live Scoreboard Summary (PDF)',
-            description: 'Condensed scoreboard for live display or printing.',
-            tags: ['Rankings', 'Final Scores'],
-            buttonLabel: 'Generate PDF',
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              _snackBar('Scoreboard PDF generated!', AppColors.accentGreen),
-            ),
-          ),
-          const SizedBox(height: 24),
-          _sectionLabel('📊  Export Results Data'),
-          const SizedBox(height: 14),
-          _buildExportCard(
-            icon: Icons.table_chart_rounded,
-            iconColor: const Color(0xFF2E7D32),
-            title: 'Export to Excel (.xlsx)',
-            description:
-                'Complete spreadsheet with rankings, judge scores, criteria matrix, and penalties.',
-            tags: ['All Sheets', 'Judge Scores', 'Criteria', 'Penalties'],
-            buttonLabel: 'Export Excel',
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              _snackBar('Excel file exported!', AppColors.accentGreen),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _buildExportCard(
-            icon: Icons.data_object_rounded,
-            iconColor: const Color(0xFF6A1B9A),
-            title: 'Export to CSV (.csv)',
-            description:
-                'Lightweight flat-file export of final scores and rankings.',
-            tags: ['Rankings', 'Final Scores', 'Lightweight'],
-            buttonLabel: 'Export CSV',
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              _snackBar('CSV file exported!', AppColors.accentGreen),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _buildExportCard(
-            icon: Icons.code_rounded,
-            iconColor: const Color(0xFF00695C),
-            title: 'Export Raw Data (JSON)',
-            description:
-                'Complete machine-readable export including all judge scores, criteria, and penalties.',
-            tags: ['All Data', 'Developer Use'],
-            buttonLabel: 'Export JSON',
-            onPressed: () => ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(_snackBar('JSON exported!', AppColors.accentGreen)),
-          ),
-          const SizedBox(height: 24),
-          _buildExportPreviewTable(),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExportCard({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    required String description,
-    required List<String> tags,
-    required String buttonLabel,
-    required VoidCallback onPressed,
-  }) {
+  // ── Auto-Total Banner ─────────────────────────────────────────
+  Widget _buildAutoTotalBanner() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: autoTotalEnabled
+            ? AppColors.accentGreen.withOpacity(0.06)
+            : AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: autoTotalEnabled
+              ? AppColors.accentGreen.withOpacity(0.3)
+              : AppColors.divider,
+        ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Icon(icon, color: iconColor, size: 26),
+          Icon(
+            Icons.calculate_rounded,
+            color: autoTotalEnabled
+                ? AppColors.accentGreen
+                : AppColors.silverRank,
+            size: 20,
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  'Auto-Compute Final Score',
                   style: GoogleFonts.poppins(
                     fontWeight: FontWeight.w600,
-                    fontSize: 15,
+                    fontSize: 13.5,
+                    color: autoTotalEnabled
+                        ? AppColors.accentGreen
+                        : Colors.grey[600],
                   ),
                 ),
-                const SizedBox(height: 4),
                 Text(
-                  description,
+                  autoTotalEnabled
+                      ? 'The system automatically multiplies each criterion score by its weight and sums them for the final result.'
+                      : 'Auto-compute is OFF. Admins must manually enter final totals.',
                   style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: tags
-                      .map(
-                        (tag) => Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[100],
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            tag,
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-              elevation: 0,
-            ),
-            icon: const Icon(Icons.download_rounded, size: 16),
-            label: Text(
-              buttonLabel,
-              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-            ),
-            onPressed: onPressed,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExportPreviewTable() {
-    final ranked = _rankedResults;
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Text(
-                  'Export Preview — Final Results',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  '${ranked.length} groups',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
+                    fontSize: 11.5,
                     color: Colors.grey[500],
                   ),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              headingRowColor: WidgetStateProperty.all(AppColors.primary),
-              headingTextStyle: GoogleFonts.poppins(
-                color: Colors.white70,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+          Switch(
+            value: autoTotalEnabled,
+            onChanged: (val) {
+              setState(() => autoTotalEnabled = val);
+              _markDirty();
+            },
+            activeThumbColor: AppColors.accentGreen,
+            activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Weight Warning ────────────────────────────────────────────
+  Widget _buildWeightWarning() {
+    final diff = _requiredWeight - totalWeight;
+    final isOver = diff < 0;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: AppColors.warning,
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              isOver
+                  ? 'Total weight is ${diff.abs().toStringAsFixed(1)}% over 100%. Please reduce some weights before saving.'
+                  : 'Total weight is ${diff.toStringAsFixed(1)}% short of 100%. Adjust the weights so they add up to exactly 100%.',
+              style: GoogleFonts.poppins(
+                fontSize: 12.5,
+                color: AppColors.warning,
+                fontWeight: FontWeight.w500,
               ),
-              dataTextStyle: GoogleFonts.poppins(fontSize: 13),
-              columnSpacing: 20,
-              columns: const [
-                DataColumn(label: Text('Rank')),
-                DataColumn(label: Text('Group')),
-                DataColumn(label: Text('Barangay')),
-                DataColumn(label: Text('Theme')),
-                DataColumn(label: Text('Raw Score')),
-                DataColumn(label: Text('Deductions')),
-                DataColumn(label: Text('Final Score')),
-                DataColumn(label: Text('Judges')),
-              ],
-              rows: ranked.asMap().entries.map((entry) {
-                final rank = entry.key + 1;
-                final g = entry.value;
-                return DataRow(
-                  color: WidgetStateProperty.resolveWith((_) {
-                    if (rank == 1) {
-                      return AppColors.goldRank.withOpacity(0.06);
-                    }
-                    return null;
-                  }),
-                  cells: [
-                    DataCell(
-                      Text(
-                        '#$rank',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        g.name,
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    DataCell(Text(g.barangay)),
-                    DataCell(Text(g.theme)),
-                    DataCell(Text(g.rawTotal.toStringAsFixed(2))),
-                    DataCell(
-                      Text(
-                        g.totalPenalty > 0
-                            ? '-${g.totalPenalty.toStringAsFixed(1)}'
-                            : '—',
-                        style: GoogleFonts.poppins(
-                          color: g.totalPenalty > 0
-                              ? AppColors.danger
-                              : Colors.grey[400],
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        g.judgeEmails.isEmpty
-                            ? '—'
-                            : g.finalScore.toStringAsFixed(2),
-                        style: GoogleFonts.poppins(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Text(
-                        '${g.judgeEmails.length} / 5',
-                        style: GoogleFonts.poppins(
-                          color: g.judgeEmails.length == 5
-                              ? AppColors.accentGreen
-                              : AppColors.warning,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              }).toList(),
             ),
           ),
         ],
@@ -2075,155 +1133,1056 @@ class _ResultsScreenState extends State<ResultsScreen>
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  FINALIZE DIALOG
-  // ─────────────────────────────────────────────
-
-  Widget _buildFinalizeDialog() {
-    bool saving = false;
-    return StatefulBuilder(
-      builder: (ctx, setD) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              const Icon(Icons.warning_amber_rounded, color: AppColors.warning),
-              const SizedBox(width: 10),
-              Text(
-                'Finalize Results?',
-                style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          content: Text(
-            'Once finalized, scores will be locked and cannot be modified. '
-            'Make sure all judges have submitted their scores and all penalties have been recorded.',
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[700]),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(
-                'Cancel',
-                style: GoogleFonts.poppins(color: Colors.grey),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              onPressed: saving
-                  ? null
-                  : () async {
-                      setD(() => saving = true);
-                      await _finalizeResults();
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          _snackBar(
-                            'Results finalized and locked! 🏆',
-                            AppColors.accentGreen,
-                          ),
-                        );
-                      }
-                    },
-              child: saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Text(
-                      'Yes, Finalize',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-            ),
-          ],
+  // ── List ──────────────────────────────────────────────────────
+  Widget _buildList() {
+    return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: criteriaList.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, i) {
+        final c = criteriaList[i];
+        return _CriteriaCard(
+          criteria: c,
+          autoTotal: autoTotalEnabled,
+          categoryColor: _activeCategory.color,
+          onEdit: () => _showDialog(context, c),
+          onDelete: () => _confirmDelete(context, c),
+          onToggle: (val) {
+            setState(() => c.isActive = val);
+            _markDirty();
+          },
         );
       },
     );
   }
 
-  // ─────────────────────────────────────────────
-  //  SHARED HELPERS
-  // ─────────────────────────────────────────────
-
-  Widget _sectionLabel(String text, {Color? color}) {
-    return Text(
-      text,
-      style: GoogleFonts.poppins(
-        fontWeight: FontWeight.bold,
-        fontSize: 15,
-        color: color ?? Colors.black87,
+  Widget _buildEmptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.divider.withOpacity(0.4),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.rule_folder_rounded,
+                size: 36,
+                color: AppColors.silverRank,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'No scoring criteria yet',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600,
+                fontSize: 16,
+                color: Colors.grey[700],
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: 340,
+              child: Text(
+                'Select a category to load its preset, or add criteria manually.',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey[500],
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () => _showDialog(context, null),
+              icon: const Icon(Icons.add_rounded),
+              label: Text('Add First Criterion', style: GoogleFonts.poppins()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.secondary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 22,
+                  vertical: 13,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  SnackBar _snackBar(String message, Color color) {
-    return SnackBar(
-      content: Text(message, style: GoogleFonts.poppins()),
-      backgroundColor: color,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  // ── Dialogs ───────────────────────────────────────────────────
+  void _confirmCategorySwitch(CompetitionCategory newCat) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: AppColors.warning.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.warning_amber_rounded,
+            color: AppColors.warning,
+            size: 28,
+          ),
+        ),
+        title: Text(
+          'Unsaved Changes',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          'You have unsaved changes for ${_activeCategory.label}. Switch anyway and discard them?',
+          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.grey[600],
+              side: const BorderSide(color: AppColors.divider),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text('Stay', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _loadPreset(newCat);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text(
+              'Discard & Switch',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDialog(BuildContext context, ScoringCriteria? existing) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _CriteriaFormDialog(
+        existing: existing,
+        onSave: (c) {
+          setState(() {
+            if (existing == null) {
+              criteriaList.add(c);
+            } else {
+              final idx = criteriaList.indexWhere((x) => x.id == c.id);
+              if (idx != -1) criteriaList[idx] = c;
+            }
+          });
+          _markDirty();
+        },
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context, ScoringCriteria c) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        icon: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            color: AppColors.danger.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.delete_outline_rounded,
+            color: AppColors.danger,
+            size: 28,
+          ),
+        ),
+        title: Text(
+          'Remove "${c.name}"?',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          'This criterion will be removed and will no longer be included in scoring.',
+          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(context),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.grey[600],
+              side: const BorderSide(color: AppColors.divider),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() => criteriaList.removeWhere((x) => x.id == c.id));
+              _markDirty();
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            child: Text(
+              'Yes, Remove',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  PULSING DOT WIDGET
+//  SUMMARY CARDS (unchanged UI, kept intact)
 // ═══════════════════════════════════════════════════════════════
 
-class _PulsingDot extends StatefulWidget {
+class _SummaryCard extends StatelessWidget {
+  final String label, value;
+  final IconData icon;
   final Color color;
-  const _PulsingDot({required this.color});
+  const _SummaryCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
-  State<_PulsingDot> createState() => _PulsingDotState();
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 10,
+              color: AppColors.shadow,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: AppColors.silverRank,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _PulsingDotState extends State<_PulsingDot>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  late Animation<double> _anim;
+class _WeightCard extends StatelessWidget {
+  final double total;
+  final bool isValid;
+  final double required; // ← add this
+  const _WeightCard({
+    required this.total,
+    required this.isValid,
+    required this.required,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isValid ? AppColors.accentGreen : AppColors.warning;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withOpacity(0.4), width: 1.5),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 10,
+              color: AppColors.shadow,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                isValid
+                    ? Icons.check_circle_rounded
+                    : Icons.warning_amber_rounded,
+                color: color,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${total.toStringAsFixed(0)}%',
+                    style: GoogleFonts.poppins(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    isValid
+                        ? 'Total Weight ✓ (${required.toStringAsFixed(0)}%)'
+                        : 'Total Weight (must equal ${required.toStringAsFixed(0)}%)',
+                    style: GoogleFonts.poppins(fontSize: 11, color: color),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CRITERIA CARD
+// ═══════════════════════════════════════════════════════════════
+
+class _CriteriaCard extends StatelessWidget {
+  final ScoringCriteria criteria;
+  final bool autoTotal;
+  final Color categoryColor;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final ValueChanged<bool> onToggle;
+
+  const _CriteriaCard({
+    required this.criteria,
+    required this.autoTotal,
+    required this.categoryColor,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final active = criteria.isActive;
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 250),
+      opacity: active ? 1.0 : 0.55,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: active ? categoryColor.withOpacity(0.15) : AppColors.divider,
+          ),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 10,
+              color: AppColors.shadow,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: categoryColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.star_rounded,
+                    color: categoryColor,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        criteria.name,
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (criteria.description.isNotEmpty)
+                        Text(
+                          criteria.description,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.silverRank,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                Row(
+                  children: [
+                    Text(
+                      active ? 'Active' : 'Inactive',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: active
+                            ? AppColors.accentGreen
+                            : AppColors.silverRank,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Switch(
+                      value: active,
+                      onChanged: onToggle,
+                      activeThumbColor: AppColors.accentGreen,
+                      activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
+                Tooltip(
+                  message: 'Edit criteria',
+                  child: InkWell(
+                    onTap: onEdit,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: categoryColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.edit_rounded,
+                        size: 16,
+                        color: categoryColor,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Tooltip(
+                  message: 'Remove criteria',
+                  child: InkWell(
+                    onTap: onDelete,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.delete_outline_rounded,
+                        size: 16,
+                        color: AppColors.danger,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: AppColors.divider),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _StatChip(
+                  icon: Icons.percent_rounded,
+                  label: 'Weight',
+                  value: '${criteria.weight.toStringAsFixed(0)}%',
+                  color: categoryColor,
+                ),
+                _StatChip(
+                  icon: Icons.arrow_downward_rounded,
+                  label: 'Min Score',
+                  value: criteria.minScore.toStringAsFixed(0),
+                  color: AppColors.accentGreen,
+                ),
+                _StatChip(
+                  icon: Icons.arrow_upward_rounded,
+                  label: 'Max Score',
+                  value: criteria.maxScore.toStringAsFixed(0),
+                  color: AppColors.primary,
+                ),
+                if (autoTotal && active)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentGreen.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.calculate_rounded,
+                          size: 13,
+                          color: AppColors.accentGreen,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          'Auto-computed',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppColors.accentGreen,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Tooltip(
+              message: '${criteria.weight.toStringAsFixed(0)}% of total score',
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: LinearProgressIndicator(
+                  value: (criteria.weight / 100).clamp(0.0, 1.0),
+                  minHeight: 6,
+                  backgroundColor: AppColors.divider,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    active ? categoryColor : AppColors.silverRank,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String label, value;
+  final Color color;
+  const _StatChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 5),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+              Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: AppColors.silverRank,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FORM DIALOG
+// ═══════════════════════════════════════════════════════════════
+
+class _CriteriaFormDialog extends StatefulWidget {
+  final ScoringCriteria? existing;
+  final Function(ScoringCriteria) onSave;
+  const _CriteriaFormDialog({this.existing, required this.onSave});
+
+  @override
+  State<_CriteriaFormDialog> createState() => _CriteriaFormDialogState();
+}
+
+class _CriteriaFormDialogState extends State<_CriteriaFormDialog> {
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _descCtrl;
+  late final TextEditingController _weightCtrl;
+  late final TextEditingController _minCtrl;
+  late final TextEditingController _maxCtrl;
+  late bool _isActive;
+
+  String? _nameError;
+  String? _weightError;
+  String? _rangeError;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _anim = Tween<double>(
-      begin: 0.4,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+    final c = widget.existing;
+    _nameCtrl = TextEditingController(text: c?.name ?? '');
+    _descCtrl = TextEditingController(text: c?.description ?? '');
+    _weightCtrl = TextEditingController(
+      text: c != null ? c.weight.toStringAsFixed(0) : '',
+    );
+    _minCtrl = TextEditingController(
+      text: c != null ? c.minScore.toStringAsFixed(0) : '0',
+    );
+    _maxCtrl = TextEditingController(
+      text: c != null ? c.maxScore.toStringAsFixed(0) : '100',
+    );
+    _isActive = c?.isActive ?? true;
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _nameCtrl.dispose();
+    _descCtrl.dispose();
+    _weightCtrl.dispose();
+    _minCtrl.dispose();
+    _maxCtrl.dispose();
     super.dispose();
+  }
+
+  bool _validate() {
+    bool ok = true;
+    setState(() {
+      _nameError = _nameCtrl.text.trim().isEmpty
+          ? 'Please enter a criteria name.'
+          : null;
+      final w = double.tryParse(_weightCtrl.text);
+      _weightError = (w == null || w <= 0 || w > 100)
+          ? 'Enter a number between 1 and 100.'
+          : null;
+      final min = double.tryParse(_minCtrl.text);
+      final max = double.tryParse(_maxCtrl.text);
+      _rangeError = (min == null || max == null || min >= max)
+          ? 'Max score must be greater than min score.'
+          : null;
+      if (_nameError != null || _weightError != null || _rangeError != null) {
+        ok = false;
+      }
+    });
+    return ok;
+  }
+
+  void _save() {
+    if (!_validate()) return;
+    widget.onSave(
+      ScoringCriteria(
+        id:
+            widget.existing?.id ??
+            DateTime.now().millisecondsSinceEpoch.toString(),
+        name: _nameCtrl.text.trim(),
+        description: _descCtrl.text.trim(),
+        weight: double.parse(_weightCtrl.text),
+        minScore: double.parse(_minCtrl.text),
+        maxScore: double.parse(_maxCtrl.text),
+        isActive: _isActive,
+      ),
+    );
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _anim,
-      child: Container(
-        width: 8,
-        height: 8,
-        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+    final isEdit = widget.existing != null;
+    return Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.secondary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.rule_folder_rounded,
+                      color: AppColors.secondary,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isEdit ? 'Edit Criteria' : 'Add New Criteria',
+                          style: GoogleFonts.poppins(
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          isEdit
+                              ? 'Update the criteria details'
+                              : 'Define a new scoring criterion',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              _label('Criteria Name *'),
+              _field(_nameCtrl, 'e.g. Choreography', error: _nameError),
+              const SizedBox(height: 14),
+              _label('Description'),
+              _field(
+                _descCtrl,
+                'Briefly describe what judges should evaluate…',
+                maxLines: 2,
+              ),
+              const SizedBox(height: 14),
+              _label('Percentage Weight (%) *'),
+              Text(
+                'How much does this criterion count toward the total score? All active criteria must add up to 100%.',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                ),
+              ),
+              const SizedBox(height: 6),
+              _field(
+                _weightCtrl,
+                'e.g. 25',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                ],
+                error: _weightError,
+                suffix: Text(
+                  '%',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.secondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              _label('Score Range *'),
+              Text(
+                'The minimum and maximum score a judge can give for this criterion.',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: _field(
+                      _minCtrl,
+                      'Min (e.g. 0)',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Text(
+                      'to',
+                      style: GoogleFonts.poppins(color: AppColors.silverRank),
+                    ),
+                  ),
+                  Expanded(
+                    child: _field(
+                      _maxCtrl,
+                      'Max (e.g. 100)',
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
+                  ),
+                ],
+              ),
+              if (_rangeError != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    _rangeError!,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 18),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.background,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.toggle_on_rounded,
+                      color: _isActive
+                          ? AppColors.accentGreen
+                          : AppColors.silverRank,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Include in scoring',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            'When inactive, judges won\'t see this criterion and it won\'t affect scores.',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _isActive,
+                      onChanged: (v) => setState(() => _isActive = v),
+                      activeThumbColor: AppColors.accentGreen,
+                      activeTrackColor: AppColors.accentGreen.withOpacity(0.3),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 26),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.silverRank,
+                      side: const BorderSide(color: AppColors.divider),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text('Cancel', style: GoogleFonts.poppins()),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: _save,
+                    icon: Icon(
+                      isEdit ? Icons.save_rounded : Icons.add_rounded,
+                      size: 18,
+                    ),
+                    label: Text(
+                      isEdit ? 'Save Changes' : 'Add Criteria',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.secondary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 22,
+                        vertical: 13,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(
+      text,
+      style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13),
+    ),
+  );
+
+  Widget _field(
+    TextEditingController ctrl,
+    String hint, {
+    String? error,
+    int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
+    List<TextInputFormatter>? inputFormatters,
+    Widget? suffix,
+  }) {
+    return TextField(
+      controller: ctrl,
+      maxLines: maxLines,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      style: GoogleFonts.poppins(fontSize: 14),
+      onChanged: (_) {
+        if (error != null) setState(() {});
+      },
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: GoogleFonts.poppins(
+          color: AppColors.silverRank,
+          fontSize: 13,
+        ),
+        suffix: suffix,
+        errorText: error,
+        errorStyle: GoogleFonts.poppins(fontSize: 11, color: AppColors.danger),
+        filled: true,
+        fillColor: AppColors.background,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide.none,
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.danger),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: AppColors.secondary, width: 1.5),
+        ),
       ),
     );
   }
