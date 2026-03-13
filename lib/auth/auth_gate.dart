@@ -5,6 +5,7 @@ import 'package:pandan_fest/constant/colors.dart';
 import '../admin/admin_dashboard.dart';
 import '../judge/street_dance_scoring_screen.dart';
 import '../judge/focal_presentation_scoring_screen.dart';
+import '../judge/festival_queen_scoring_screen.dart';
 import 'login_screen.dart';
 
 class AuthGate extends StatelessWidget {
@@ -28,7 +29,6 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // 1. Wait while loading auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(
@@ -38,13 +38,10 @@ class AuthGate extends StatelessWidget {
         }
 
         final user = snapshot.data;
-
-        // 2. Not logged in → Login screen
         if (user == null) {
           return const LoginScreen();
         }
 
-        // 3. Logged in → fetch role + category
         return FutureBuilder<Map<String, String?>>(
           future: getUserInfo(user.uid),
           builder: (context, roleSnapshot) {
@@ -57,21 +54,14 @@ class AuthGate extends StatelessWidget {
             }
 
             final role = roleSnapshot.data?['role'];
-            final category = roleSnapshot.data?['category'];
 
             if (role == 'admin') {
               return const AdminDashboard();
             }
 
             if (role == 'judge') {
-              // Route to the correct scoring screen based on category field
-              // Firestore users doc should have:
-              //   category: "streetDance" | "focalPresentation"
-              if (category == 'focalPresentation') {
-                return const FocalPresentationScoringScreen();
-              }
-              // Default judges (streetDance or no category set) go to Street Dance
-              return const StreetDanceScoringScreen();
+              // Now using dynamic JudgeRouter based on live session
+              return const JudgeRouter();
             }
 
             return const Scaffold(
@@ -79,6 +69,37 @@ class AuthGate extends StatelessWidget {
             );
           },
         );
+      },
+    );
+  }
+}
+
+class JudgeRouter extends StatelessWidget {
+  const JudgeRouter({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('live_sessions').doc('current').snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+          );
+        }
+        
+        final data = snapshot.data?.data();
+        final timerPreset = data?['timerPreset'] as String? ?? 'streetDance';
+        
+        if (timerPreset == 'focalPresentation') {
+          return const FocalPresentationScoringScreen();
+        } else if (timerPreset == 'festivalQueen') {
+          return const FestivalQueenScoringScreen();
+        }
+        
+        return const StreetDanceScoringScreen();
       },
     );
   }

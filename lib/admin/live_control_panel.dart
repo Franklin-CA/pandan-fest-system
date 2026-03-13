@@ -87,7 +87,7 @@ const List<PerformanceStation> kStations = [
   ),
 ];
 
-enum TimerPreset { streetDance, focalPresentation }
+enum TimerPreset { streetDance, focalPresentation, festivalQueen }
 
 extension TimerPresetExt on TimerPreset {
   String get label {
@@ -96,6 +96,8 @@ extension TimerPresetExt on TimerPreset {
         return 'Street Dance (3–4 min)';
       case TimerPreset.focalPresentation:
         return 'Focal Presentation (7–8 min)';
+      case TimerPreset.festivalQueen:
+        return 'Festival Queen';
     }
   }
 
@@ -105,6 +107,8 @@ extension TimerPresetExt on TimerPreset {
         return 'streetDance';
       case TimerPreset.focalPresentation:
         return 'focalPresentation';
+      case TimerPreset.festivalQueen:
+        return 'festivalQueen';
     }
   }
 
@@ -114,6 +118,8 @@ extension TimerPresetExt on TimerPreset {
         return 180;
       case TimerPreset.focalPresentation:
         return 420;
+      case TimerPreset.festivalQueen:
+        return 0;
     }
   }
 
@@ -123,6 +129,8 @@ extension TimerPresetExt on TimerPreset {
         return 240;
       case TimerPreset.focalPresentation:
         return 480;
+      case TimerPreset.festivalQueen:
+        return 300;
     }
   }
 
@@ -132,12 +140,15 @@ extension TimerPresetExt on TimerPreset {
         return AppColors.primary;
       case TimerPreset.focalPresentation:
         return AppColors.secondary;
+      case TimerPreset.festivalQueen:
+        return AppColors.goldRank;
     }
   }
 }
 
 TimerPreset _presetFromString(String? s) {
   if (s == 'focalPresentation') return TimerPreset.focalPresentation;
+  if (s == 'festivalQueen') return TimerPreset.festivalQueen;
   return TimerPreset.streetDance;
 }
 
@@ -161,7 +172,9 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   String? selectedGroupId;
   String? selectedGroupName;
   String? selectedGroupBarangay;
-  List<String> selectedCriteriaIds = staticCriteria.map((c) => c.id).toList();
+  List<String> selectedCriteriaIds = streetDanceCriteria
+      .map((c) => c.id)
+      .toList();
   bool isPushedToJudges = false;
   bool isPushing = false;
   String? selectedStationId;
@@ -207,7 +220,17 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   );
 
   PerformanceStation? get selectedStation => selectedStationId != null
-      ? kStations.firstWhere((s) => s.id == selectedStationId)
+      ? kStations.firstWhere(
+          (s) => s.id == selectedStationId,
+          orElse: () => PerformanceStation(
+            id: selectedStationId!,
+            name: _timerPreset == TimerPreset.focalPresentation
+                ? 'Focal Stage'
+                : 'Festival Queen Stage',
+            description: '',
+            icon: Icons.star_rounded,
+          ),
+        )
       : null;
 
   // ── Timer helpers ──
@@ -362,21 +385,33 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   }
 
   Future<void> _pushToJudges() async {
+    final isStreetDance = _timerPreset == TimerPreset.streetDance;
     if (selectedGroupId == null ||
         activeCriteria.isEmpty ||
-        selectedStationId == null) {
+        (isStreetDance && selectedStationId == null)) {
       return;
     }
     final user = _auth.currentUser;
     setState(() => isPushing = true);
+
+    final sId = isStreetDance
+        ? selectedStationId
+        : (_timerPreset == TimerPreset.focalPresentation
+              ? 'focal_stage'
+              : 'queen_stage');
+    final sName = isStreetDance
+        ? selectedStation?.name
+        : (_timerPreset == TimerPreset.focalPresentation
+              ? 'Focal Stage'
+              : 'Festival Queen Stage');
 
     try {
       await _db.collection('live_sessions').doc('current').set({
         'groupId': selectedGroupId,
         'groupName': selectedGroup?.name ?? selectedGroupName ?? '',
         'barangay': selectedGroup?.barangay ?? selectedGroupBarangay ?? '',
-        'stationId': selectedStationId,
-        'stationName': selectedStation?.name ?? '',
+        'stationId': sId,
+        'stationName': sName ?? '',
         'criteriaIds': selectedCriteriaIds,
         'isPushed': true,
         'timerElapsed': _elapsedSeconds,
@@ -509,23 +544,25 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                           });
                         },
                       ),
-                      const SizedBox(height: 16),
-                      _StationSelector(
-                        stations: kStations,
-                        selectedId: selectedStationId,
-                        onSelect: (id) {
-                          final s = kStations.firstWhere((s) => s.id == id);
-                          setState(() {
-                            selectedStationId = id;
-                            isPushedToJudges = false;
-                          });
-                          _writeSessionPartial({
-                            'stationId': id,
-                            'stationName': s.name,
-                            'isPushed': false,
-                          });
-                        },
-                      ),
+                      if (_timerPreset == TimerPreset.streetDance) ...[
+                        const SizedBox(height: 16),
+                        _StationSelector(
+                          stations: kStations,
+                          selectedId: selectedStationId,
+                          onSelect: (id) {
+                            final s = kStations.firstWhere((s) => s.id == id);
+                            setState(() {
+                              selectedStationId = id;
+                              isPushedToJudges = false;
+                            });
+                            _writeSessionPartial({
+                              'stationId': id,
+                              'stationName': s.name,
+                              'isPushed': false,
+                            });
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       _CriteriaSelector(
                         criteria: staticCriteria,
@@ -549,7 +586,8 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                       _PushButton(
                         isReady:
                             selectedGroupId != null &&
-                            selectedStationId != null &&
+                            (_timerPreset != TimerPreset.streetDance ||
+                                selectedStationId != null) &&
                             activeCriteria.isNotEmpty,
                         isPushing: isPushing,
                         isPushed: isPushedToJudges,
@@ -583,10 +621,34 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                             setState(() {
                               _timerPreset = p;
                               _elapsedSeconds = 0;
+                              if (p == TimerPreset.streetDance) {
+                                selectedCriteriaIds = streetDanceCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                if (selectedStationId == 'focal_stage' ||
+                                    selectedStationId == 'queen_stage') {
+                                  selectedStationId = null;
+                                }
+                              } else if (p == TimerPreset.focalPresentation) {
+                                selectedCriteriaIds = focalPresentationCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                selectedStationId = 'focal_stage';
+                              } else {
+                                selectedCriteriaIds = festivalQueenCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                selectedStationId = 'queen_stage';
+                              }
                             });
                             _writeSessionPartial({
                               'timerPreset': p.docValue,
                               'timerElapsed': 0,
+                              'criteriaIds': selectedCriteriaIds,
+                              'stationId': selectedStationId,
+                              'stationName': p == TimerPreset.streetDance
+                                  ? null
+                                  : 'Main Display',
                             });
                           }
                         },
@@ -764,22 +826,39 @@ class _LiveControlPanelState extends State<LiveControlPanel>
 
   // ── Step Hint ────────────────────────────────────────────────
   Widget _buildStepHint() {
-    final step = selectedGroupId == null
-        ? 1
-        : selectedStationId == null
-        ? 2
-        : activeCriteria.isEmpty
-        ? 3
-        : !isPushedToJudges
-        ? 4
-        : 5;
+    final isStreetDance = _timerPreset == TimerPreset.streetDance;
+
+    int currentStep = 1;
+    if (selectedGroupId != null) {
+      if (isStreetDance && selectedStationId == null) {
+        currentStep = 2;
+      } else if (activeCriteria.isEmpty) {
+        currentStep = isStreetDance ? 3 : 2;
+      } else if (!isPushedToJudges) {
+        currentStep = isStreetDance ? 4 : 3;
+      } else {
+        currentStep = isStreetDance ? 5 : 4;
+      }
+    }
 
     final steps = [
-      _StepInfo(1, 'Select Group', step >= 1),
-      _StepInfo(2, 'Select Station', step >= 2),
-      _StepInfo(3, 'Confirm Criteria', step >= 3),
-      _StepInfo(4, 'Push to Judges', step >= 4),
-      _StepInfo(5, 'Monitor Live', step >= 5),
+      _StepInfo(1, 'Select Group', currentStep >= 1),
+      if (isStreetDance) _StepInfo(2, 'Select Station', currentStep >= 2),
+      _StepInfo(
+        isStreetDance ? 3 : 2,
+        'Confirm Criteria',
+        currentStep >= (isStreetDance ? 3 : 2),
+      ),
+      _StepInfo(
+        isStreetDance ? 4 : 3,
+        'Push to Judges',
+        currentStep >= (isStreetDance ? 4 : 3),
+      ),
+      _StepInfo(
+        isStreetDance ? 5 : 4,
+        'Monitor Live',
+        currentStep >= (isStreetDance ? 5 : 4),
+      ),
     ];
 
     return Container(
@@ -793,12 +872,12 @@ class _LiveControlPanelState extends State<LiveControlPanel>
         children: steps
             .expand(
               (s) => [
-                _StepChip(info: s, isCurrent: s.number == step),
-                if (s.number < steps.length)
+                _StepChip(info: s, isCurrent: s.number == currentStep),
+                if (s.number < steps.last.number)
                   Expanded(
                     child: Container(
                       height: 1,
-                      color: s.number < step
+                      color: s.number < currentStep
                           ? AppColors.secondary.withOpacity(0.4)
                           : AppColors.divider,
                     ),

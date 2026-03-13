@@ -246,25 +246,6 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
     } catch (_) {}
   }
 
-  /// After submitting, check if all groups are now scored at this
-  /// station. If so, clear the scored keys for this station so the
-  /// judge is ready for the next station round.
-  Future<void> _checkAndResetIfAllScored() async {
-    if (_currentStationId == null || _groups.isEmpty) return;
-    final allDone = await _service.allGroupsScoredAtStation(
-      judgeEmail: _judgeEmail,
-      stationId: _currentStationId!,
-      totalGroupCount: _groups.length,
-    );
-    if (allDone && mounted) {
-      // All groups scored at this station — clear keys for this station
-      // so the judge is unlocked when the next station begins.
-      setState(() {
-        _scoredKeys.removeWhere((key) => key.endsWith('_$_currentStationId'));
-      });
-    }
-  }
-
   void _reevaluateScoredState() {
     if (_selectedGroup == null || _currentStationId == null) return;
     final key = '${_selectedGroup!.id}_$_currentStationId';
@@ -369,9 +350,6 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
         _scoredKeys.add(key);
         _screenState = JudgeScreenState.submitted;
       });
-
-      // Check if all groups are now done at this station
-      await _checkAndResetIfAllScored();
     } catch (e) {
       setState(() => _isSubmitting = false);
       if (mounted) {
@@ -390,6 +368,12 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
         );
       }
     }
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (mounted)
+    Navigator.pushReplacementNamed(context, '/');
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -465,6 +449,7 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
             categoryTitle: _title,
             categoryIcon: _icon,
             categoryColor: _color,
+            onLogout: _logout,
             onBack:
                 _screenState == JudgeScreenState.scoring ||
                     _screenState == JudgeScreenState.alreadyScored

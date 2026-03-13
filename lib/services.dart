@@ -212,9 +212,36 @@ const List<ActiveCriterion> focalPresentationCriteria = [
 // STATIC CRITERIA
 // ═══════════════════════════════════════════════════════════════════
 
+const List<ActiveCriterion> festivalQueenCriteria = [
+  ActiveCriterion(
+    id: 'fq_1',
+    name: 'Stage Presence / Personality & Performance',
+    weight: 30,
+    maxScore: 100,
+    description:
+        'Confidence, poise, and ability to showcase the dance effectively.',
+  ),
+  ActiveCriterion(
+    id: 'fq_2',
+    name: 'Costume Creativity & Cultural Relevance',
+    weight: 10,
+    maxScore: 100,
+    description:
+        'Uniqueness of design, innovative use of materials, overall artistic merit, and accuracy in representing cultural heritage and tradition.',
+  ),
+  ActiveCriterion(
+    id: 'fq_3',
+    name: 'Overall Impact',
+    weight: 10,
+    maxScore: 100,
+    description: 'Totality and overall performance/impression.',
+  ),
+];
+
 const List<ActiveCriterion> staticCriteria = [
   ...streetDanceCriteria,
   ...focalPresentationCriteria,
+  ...festivalQueenCriteria,
 ];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -298,23 +325,6 @@ class JudgeScoreService {
         })
         .where((key) => key != '_')
         .toSet();
-  }
-
-  /// Checks if ALL groups have been scored at a given station by
-  /// this judge. Used to reset the lock after all groups are done.
-  Future<bool> allGroupsScoredAtStation({
-    required String judgeEmail,
-    required String stationId,
-    required int totalGroupCount,
-  }) async {
-    final snap = await _db
-        .collection('judge_scores')
-        .where('judgeEmail', isEqualTo: judgeEmail)
-        .where('stationId', isEqualTo: stationId)
-        .where('sessionId', isEqualTo: 'current')
-        .where('isSubmitted', isEqualTo: true)
-        .get();
-    return snap.docs.length >= totalGroupCount;
   }
 
   FirebaseFirestore get db => _db;

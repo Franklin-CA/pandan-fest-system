@@ -21,6 +21,7 @@ class JudgeTopBar extends StatelessWidget {
   final IconData categoryIcon;
   final Color categoryColor;
   final VoidCallback? onBack;
+  final VoidCallback? onLogout;
 
   const JudgeTopBar({
     super.key,
@@ -31,6 +32,7 @@ class JudgeTopBar extends StatelessWidget {
     required this.categoryIcon,
     required this.categoryColor,
     this.onBack,
+    this.onLogout,
   });
 
   @override
@@ -139,31 +141,43 @@ class JudgeTopBar extends StatelessWidget {
           const SizedBox(width: 16),
           Row(
             children: [
-              const CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white24,
-                child: Icon(Icons.gavel_rounded, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    resolveJudgeName(judgeEmail),
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+              GestureDetector(
+                onTap: onLogout,
+                behavior: HitTestBehavior.opaque,
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 18,
+                      backgroundColor: Colors.white24,
+                      child: Icon(
+                        Icons.logout_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
-                  ),
-                  Text(
-                    resolveJudgePosition(judgeEmail),
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: Colors.white60,
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          resolveJudgeName(judgeEmail),
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'Tap to Logout',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.white60,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               const SizedBox(width: 12),
               Container(
