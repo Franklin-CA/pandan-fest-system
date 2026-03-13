@@ -5,6 +5,7 @@ import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/models/app_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pandan_fest/services.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  FIRESTORE COLLECTIONS USED
@@ -199,8 +200,11 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   List<JudgeScore> get currentScores =>
       selectedGroupId != null ? _liveJudgeScores : [];
 
-  List<RankingEntry> get rankings =>
-      computeRankings(resolvedJudgeScores, _groups, staticCriteria);
+  List<RankingEntry> get rankings => computeRankings(
+    {if (selectedGroupId != null) selectedGroupId!: _liveJudgeScores},
+    _groups,
+    staticCriteria,
+  );
 
   PerformanceStation? get selectedStation => selectedStationId != null
       ? kStations.firstWhere((s) => s.id == selectedStationId)
@@ -286,34 +290,42 @@ class _LiveControlPanelState extends State<LiveControlPanel>
           final timerRunning = d['timerRunning'] as bool? ?? false;
           final timerElapsed = d['timerElapsed'] as int? ?? 0;
 
+          // Read directly from snapshot (not from setState) so they're
+          // immediately available for _listenJudgeScores below.
+          final incomingGroupId = d['groupId'] as String?;
+          final incomingStationId = d['stationId'] as String?;
+
           setState(() {
             isPushedToJudges = d['isPushed'] as bool? ?? false;
-            selectedGroupId = d['groupId'] as String?;
+            selectedGroupId = incomingGroupId;
             selectedGroupName = d['groupName'] as String?;
             selectedGroupBarangay = d['barangay'] as String?;
-            selectedStationId = d['stationId'] as String?;
+            selectedStationId = incomingStationId;
             final rawIds = d['criteriaIds'];
             if (rawIds != null) selectedCriteriaIds = List<String>.from(rawIds);
             _timerPreset = _presetFromString(d['timerPreset'] as String?);
 
-            // Only update timer state from Firestore if we're not locally running
-            // (prevents overwriting the locally-ticking counter on each write)
             if (!_timerRunning) {
               _elapsedSeconds = timerElapsed;
               if (timerRunning) _startTimerLocal();
             }
           });
 
-          // Listen to judge scores for this group
-          if (selectedGroupId != null) _listenJudgeScores(selectedGroupId!);
+          // FIX 3: Use snapshot values directly — not selectedGroupId/selectedStationId
+          // which may have been null before this setState resolved.
+          // FIX 1: Pass stationId so only current station's scores are shown.
+          if (incomingGroupId != null && incomingStationId != null) {
+            _listenJudgeScores(incomingGroupId, incomingStationId);
+          }
         });
   }
 
-  void _listenJudgeScores(String groupId) {
+  void _listenJudgeScores(String groupId, String stationId) {
     _scoresSub?.cancel();
     _scoresSub = _db
         .collection('judge_scores')
         .where('groupId', isEqualTo: groupId)
+        .where('stationId', isEqualTo: stationId)
         .where('sessionId', isEqualTo: 'current')
         .snapshots()
         .listen((snap) {
@@ -1950,7 +1962,7 @@ class _ScoreDisplay extends StatelessWidget {
         .where((j) => j.isSubmitted && j.scores.isNotEmpty)
         .toList();
     if (submitted.isEmpty) return 0;
-    return submitted.fold(0.0, (s, j) => s + j.totalWeighted(staticCriteria)) /
+    return submitted.fold(0.0, (s, j) => s + j.totalWeighted(criteria)) /
         submitted.length;
   }
 
@@ -2289,7 +2301,7 @@ class _JudgeScoreRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  judgeScore.totalWeighted(staticCriteria).toStringAsFixed(1),
+                  judgeScore.totalWeighted(criteria).toStringAsFixed(1),
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,

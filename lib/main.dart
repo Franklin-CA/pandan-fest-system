@@ -1,8 +1,10 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/auth/auth_gate.dart';
 import 'package:pandan_fest/firebase_options.dart';
-import 'package:pandan_fest/judge/judge_scoring_screen.dart';
+import 'package:pandan_fest/judge/street_dance_scoring_screen.dart';
+import 'package:pandan_fest/judge/focal_presentation_scoring_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,13 +21,17 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Pandan Fest',
 
-      // ── Initial route ──
+      // ── Initial route ──        
       initialRoute: '/',
 
       // ── Named routes ──
       routes: {
         '/': (context) => const AuthGate(),
-        '/judge': (context) => const JudgeScoringScreen(),
+
+        // AuthGate routes judges here based on their category.
+        // Both screens identify the judge via FirebaseAuth.instance.currentUser.
+        '/judge/streetdance': (context) => const StreetDanceScoringScreen(),
+        '/judge/focal': (context) => const FocalPresentationScoringScreen(),
       },
 
       // ── Fallback for unknown routes ──
@@ -55,9 +61,8 @@ class _NotFoundScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              "Page Not Found",
-              style: TextStyle(
-                fontFamily: 'Poppins',
+              'Page Not Found',
+              style: GoogleFonts.poppins(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
@@ -65,18 +70,14 @@ class _NotFoundScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              "The route you accessed does not exist.",
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 14,
-                color: Colors.grey,
-              ),
+              'The route you accessed does not exist.',
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () => Navigator.pushReplacementNamed(context, '/'),
               icon: const Icon(Icons.home_rounded),
-              label: const Text("Go to Dashboard"),
+              label: const Text('Go to Dashboard'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFD700),
                 foregroundColor: Colors.white,
