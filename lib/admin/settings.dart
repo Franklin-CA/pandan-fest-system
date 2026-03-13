@@ -11,386 +11,695 @@ class SettingsControlsScreen extends StatefulWidget {
   State<SettingsControlsScreen> createState() => _SettingsControlsScreenState();
 }
 
-class _SettingsControlsScreenState extends State<SettingsControlsScreen> {
+class _SettingsControlsScreenState extends State<SettingsControlsScreen>
+    with TickerProviderStateMixin {
   CompetitionStatus _status = CompetitionStatus.idle;
   DateTime? _startTime;
   DateTime? _lockedAt;
   String? _lastBackupTime;
 
-  // ─────────────────────────────────────────
-  // 1. START COMPETITION
-  // ─────────────────────────────────────────
+  late final AnimationController _pulseController;
 
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  // ── Status helpers ────────────────────────────────────────────
+  Color get _statusColor => switch (_status) {
+    CompetitionStatus.idle => Colors.grey,
+    CompetitionStatus.running => AppColors.live,
+    CompetitionStatus.paused => Colors.orange,
+    CompetitionStatus.locked => AppColors.danger,
+  };
+
+  String get _statusLabel => switch (_status) {
+    CompetitionStatus.idle => 'Idle — Not started',
+    CompetitionStatus.running => 'Live — Scoring Active',
+    CompetitionStatus.paused => 'Paused — Suspended',
+    CompetitionStatus.locked => 'Locked — Finalized',
+  };
+
+  IconData get _statusIcon => switch (_status) {
+    CompetitionStatus.idle => Icons.radio_button_unchecked_rounded,
+    CompetitionStatus.running => Icons.play_circle_rounded,
+    CompetitionStatus.paused => Icons.pause_circle_rounded,
+    CompetitionStatus.locked => Icons.lock_rounded,
+  };
+
+  // ── Competition actions ───────────────────────────────────────
   void _startCompetition() {
     if (_status != CompetitionStatus.idle) return;
     setState(() {
       _status = CompetitionStatus.running;
       _startTime = DateTime.now();
     });
-    _showSnack("Competition started!", Icons.play_arrow_rounded, Colors.green);
+    _toast(
+      'Competition started successfully!',
+      Icons.play_arrow_rounded,
+      AppColors.live,
+    );
   }
 
   void _endCompetition() {
     if (_status == CompetitionStatus.locked) return;
-    _showConfirmDialog(
-      title: "End Competition?",
-      message: "This will reset the competition to idle state.",
+    _confirm(
+      icon: Icons.stop_rounded,
+      iconColor: Colors.orange,
+      title: 'End Competition?',
+      message:
+          'This will stop the current session and reset the competition status to idle. '
+          'All entered scores will be preserved.',
+      confirmLabel: 'Yes, End Session',
+      confirmColor: Colors.orange,
       onConfirm: () {
         setState(() {
           _status = CompetitionStatus.idle;
           _startTime = null;
         });
-        _showSnack("Competition ended.", Icons.stop_rounded, Colors.orange);
+        _toast('Competition session ended.', Icons.stop_rounded, Colors.orange);
       },
     );
   }
 
-  // ─────────────────────────────────────────
-  // 2. PAUSE / RESUME SCORING
-  // ─────────────────────────────────────────
-
   void _togglePauseResume() {
     if (_status == CompetitionStatus.running) {
       setState(() => _status = CompetitionStatus.paused);
-      _showSnack("Scoring paused.", Icons.pause_rounded, Colors.orange);
+      _toast(
+        'Scoring paused. Judges cannot submit while paused.',
+        Icons.pause_rounded,
+        Colors.orange,
+      );
     } else if (_status == CompetitionStatus.paused) {
       setState(() => _status = CompetitionStatus.running);
-      _showSnack("Scoring resumed!", Icons.play_arrow_rounded, Colors.green);
+      _toast(
+        'Scoring resumed! Judges can now submit scores.',
+        Icons.play_arrow_rounded,
+        AppColors.live,
+      );
     }
   }
 
-  // ─────────────────────────────────────────
-  // 3. LOCK FINAL RESULTS
-  // ─────────────────────────────────────────
-
   void _lockFinalResults() {
     if (_status == CompetitionStatus.locked) return;
-    _showConfirmDialog(
-      title: "Lock Final Results?",
+    _confirm(
+      icon: Icons.lock_rounded,
+      iconColor: AppColors.danger,
+      title: 'Lock Final Results?',
       message:
-          "No scores can be changed after locking. This cannot be undone easily.",
+          'Once locked, no judge can submit or change scores. '
+          'This action is intended for after all performances are done. '
+          'You can unlock with an admin override if needed.',
+      confirmLabel: 'Lock Results',
+      confirmColor: AppColors.danger,
       onConfirm: () {
         setState(() {
           _status = CompetitionStatus.locked;
           _lockedAt = DateTime.now();
         });
-        _showSnack("Results locked!", Icons.lock_rounded, Colors.red);
+        _toast('Results are now locked.', Icons.lock_rounded, AppColors.danger);
       },
     );
   }
 
   void _unlockResults() {
     if (_status != CompetitionStatus.locked) return;
-    _showConfirmDialog(
-      title: "Unlock Results?",
-      message: "Admin override: this will allow score edits again.",
+    _confirm(
+      icon: Icons.admin_panel_settings_rounded,
+      iconColor: Colors.blueGrey,
+      title: 'Admin Override — Unlock Results?',
+      message:
+          'This is an admin override. Unlocking will allow judges to modify scores again. '
+          'Use this only if a correction is required.',
+      confirmLabel: 'Unlock (Override)',
+      confirmColor: Colors.blueGrey,
       onConfirm: () {
         setState(() {
           _status = CompetitionStatus.paused;
           _lockedAt = null;
         });
-        _showSnack("Results unlocked.", Icons.lock_open_rounded, Colors.blue);
+        _toast(
+          'Results unlocked by admin override.',
+          Icons.lock_open_rounded,
+          Colors.blueGrey,
+        );
       },
     );
   }
 
-  // ─────────────────────────────────────────
-  // 4. BACKUP & RESTORE
-  // ─────────────────────────────────────────
-
   void _backupData() {
-    final backup = {
-      'status': _status.name,
-      'startTime': _startTime?.toIso8601String(),
-      'lockedAt': _lockedAt?.toIso8601String(),
-      'backedUpAt': DateTime.now().toIso8601String(),
-    };
-    setState(() => _lastBackupTime = DateTime.now().toString());
-    _showSnack(
-      "Backup saved successfully.",
+    setState(() => _lastBackupTime = _formatTime(DateTime.now()));
+    _toast(
+      'Backup saved successfully!',
       Icons.backup_rounded,
-      Colors.green,
+      AppColors.accentGreen,
     );
-    debugPrint("Backup: $backup");
   }
 
   void _restoreData() {
-    _showConfirmDialog(
-      title: "Restore Last Backup?",
-      message: "Current state will be replaced with the last backup.",
-      onConfirm: () {
-        _showSnack("Data restored.", Icons.restore_rounded, Colors.blue);
-      },
+    _confirm(
+      icon: Icons.restore_rounded,
+      iconColor: Colors.blueGrey,
+      title: 'Restore Last Backup?',
+      message:
+          'The current system state will be replaced with the most recent backup. '
+          'This cannot be undone.',
+      confirmLabel: 'Restore Backup',
+      confirmColor: Colors.blueGrey,
+      onConfirm: () => _toast(
+        'Data restored from last backup.',
+        Icons.restore_rounded,
+        Colors.blueGrey,
+      ),
     );
   }
 
-  // ─────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────
+  String _formatTime(DateTime dt) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[dt.month - 1]} ${dt.day}, ${dt.year}  '
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
 
-  void _showSnack(String msg, IconData icon, Color color) {
+  void _toast(String msg, IconData icon, Color color) {
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
           children: [
             Icon(icon, color: Colors.white, size: 18),
             const SizedBox(width: 10),
-            Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
+            Expanded(
+              child: Text(
+                msg,
+                style: GoogleFonts.dmSans(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
           ],
         ),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 2),
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+        elevation: 8,
       ),
     );
   }
 
-  void _showConfirmDialog({
+  void _confirm({
+    required IconData icon,
+    required Color iconColor,
     required String title,
     required String message,
+    required String confirmLabel,
+    required Color confirmColor,
     required VoidCallback onConfirm,
   }) {
     showDialog(
       context: context,
+      barrierColor: Colors.black.withOpacity(0.4),
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
+        titlePadding: const EdgeInsets.fromLTRB(28, 28, 28, 4),
+        actionsPadding: const EdgeInsets.fromLTRB(28, 8, 28, 24),
+        icon: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: iconColor.withOpacity(0.25), width: 1.5),
+          ),
+          child: Icon(icon, color: iconColor, size: 28),
+        ),
+        iconPadding: const EdgeInsets.only(top: 8, bottom: 4),
         title: Text(
           title,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
-        content: Text(message, style: GoogleFonts.poppins(fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(
-              "Cancel",
-              style: GoogleFonts.poppins(color: Colors.grey),
-            ),
+          style: GoogleFonts.dmSans(
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+            color: const Color(0xFF0F172A),
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.secondary,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.dmSans(
+            fontSize: 13.5,
+            color: Colors.grey[600],
+            height: 1.65,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[600],
+                    side: BorderSide(color: Colors.grey.shade300),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ),
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              onConfirm();
-            },
-            child: Text(
-              "Confirm",
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    onConfirm();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: confirmColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                    shadowColor: confirmColor.withOpacity(0.4),
+                  ),
+                  child: Text(
+                    confirmLabel,
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // ─────────────────────────────────────────
-  // STATUS HELPERS
-  // ─────────────────────────────────────────
-
-  Color get _statusColor => switch (_status) {
-    CompetitionStatus.idle => Colors.grey,
-    CompetitionStatus.running => Colors.green,
-    CompetitionStatus.paused => Colors.orange,
-    CompetitionStatus.locked => Colors.red,
-  };
-
-  String get _statusLabel => switch (_status) {
-    CompetitionStatus.idle => "Idle",
-    CompetitionStatus.running => "Running",
-    CompetitionStatus.paused => "Paused",
-    CompetitionStatus.locked => "Locked",
-  };
-
-  // ─────────────────────────────────────────
-  // BUILD
-  // ─────────────────────────────────────────
-
+  // ── Build ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── Header ──
-        Row(
-          children: [
-            Text(
-              "System Controls",
-              style: GoogleFonts.poppins(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+        _buildHeader(),
+        const SizedBox(height: 16),
+        _buildStatusBanner(),
+        const SizedBox(height: 20),
+        Expanded(
+          child: GridView.count(
+            crossAxisCount: 2,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: 1.3,
+            children: [
+              _buildStartCard(),
+              _buildPauseCard(),
+              _buildLockCard(),
+              _buildBackupCard(),
+            ],
+          ),
+        ),
+        _buildActivityLog(),
+      ],
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'System Controls',
+                style: GoogleFonts.dmSans(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                  letterSpacing: -0.5,
+                ),
               ),
+              const SizedBox(height: 4),
+              Text(
+                'Manage competition session, scoring state, and data backups',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: Colors.grey[500],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        _buildStatusBadge(),
+      ],
+    );
+  }
+
+  Widget _buildStatusBadge() {
+    final isLive = _status == CompetitionStatus.running;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        color: _statusColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(50),
+        border: Border.all(color: _statusColor.withOpacity(0.35), width: 1.5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (isLive)
+            AnimatedBuilder(
+              animation: _pulseController,
+              builder: (_, __) => Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _statusColor.withOpacity(
+                    0.5 + 0.5 * _pulseController.value,
+                  ),
+                ),
+              ),
+            )
+          else
+            Icon(_statusIcon, color: _statusColor, size: 14),
+          const SizedBox(width: 7),
+          Text(
+            _statusLabel,
+            style: GoogleFonts.dmMono(
+              color: _statusColor,
+              fontWeight: FontWeight.w500,
+              fontSize: 11.5,
+              letterSpacing: 0.3,
             ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: _statusColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _statusColor),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.circle, color: _statusColor, size: 10),
-                  const SizedBox(width: 8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Status Banner ─────────────────────────────────────────────
+  Widget _buildStatusBanner() {
+    if (_startTime == null && _lockedAt == null) return const SizedBox.shrink();
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: _statusColor.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _statusColor.withOpacity(0.2), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: _statusColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(_statusIcon, color: _statusColor, size: 16),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_startTime != null)
                   Text(
-                    _statusLabel,
-                    style: GoogleFonts.poppins(
+                    'Session started ${_formatTime(_startTime!)}',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
                       color: _statusColor,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
+                if (_lockedAt != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Locked at ${_formatTime(_lockedAt!)}',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ],
-              ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Activity Log ──────────────────────────────────────────────
+  Widget _buildActivityLog() {
+    if (_startTime == null && _lastBackupTime == null && _lockedAt == null) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 10,
+            color: AppColors.shadow,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SESSION ACTIVITY LOG',
+            style: GoogleFonts.dmMono(
+              fontSize: 10.5,
+              color: Colors.grey[400],
+              letterSpacing: 1.2,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (_startTime != null)
+            _LogEntry(
+              icon: Icons.rocket_launch_rounded,
+              label: 'Competition session started',
+              time: _formatTime(_startTime!),
+              color: AppColors.live,
+            ),
+          if (_lastBackupTime != null) ...[
+            const SizedBox(height: 10),
+            _LogEntry(
+              icon: Icons.save_rounded,
+              label: 'Data backup saved',
+              time: _lastBackupTime!,
+              color: AppColors.secondary,
             ),
           ],
+          if (_lockedAt != null) ...[
+            const SizedBox(height: 10),
+            _LogEntry(
+              icon: Icons.lock_rounded,
+              label: 'Results locked by admin',
+              time: _formatTime(_lockedAt!),
+              color: AppColors.danger,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── Control Cards ─────────────────────────────────────────────
+  Widget _buildStartCard() {
+    final canStart = _status == CompetitionStatus.idle;
+    final canEnd =
+        _status != CompetitionStatus.idle &&
+        _status != CompetitionStatus.locked;
+
+    return _ControlCard(
+      icon: Icons.flag_rounded,
+      color: AppColors.live,
+      title: 'Competition Session',
+      showStatusChip: true,
+      status: _status,
+      statusColor: _statusColor,
+      statusLabel: _statusLabel,
+      description: switch (_status) {
+        CompetitionStatus.idle =>
+          'Competition hasn\'t started yet. Press Start when you\'re ready.',
+        CompetitionStatus.running =>
+          'Session is active. Scoring is in progress and judges can submit.',
+        CompetitionStatus.paused =>
+          'Session active but scoring is currently paused.',
+        CompetitionStatus.locked => 'Session has been finalized and locked.',
+      },
+      isPulsing: _status == CompetitionStatus.running,
+      pulseController: _pulseController,
+      actions: [
+        if (canStart)
+          _Btn(
+            label: 'Start Competition',
+            icon: Icons.play_arrow_rounded,
+            color: AppColors.live,
+            onTap: _startCompetition,
+          ),
+        if (canEnd)
+          _Btn(
+            label: 'End Session',
+            icon: Icons.stop_rounded,
+            color: Colors.orange,
+            onTap: _endCompetition,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPauseCard() {
+    final canToggle =
+        _status == CompetitionStatus.running ||
+        _status == CompetitionStatus.paused;
+
+    return _ControlCard(
+      icon: Icons.pause_circle_rounded,
+      color: Colors.orange,
+      title: 'Pause / Resume',
+      description: switch (_status) {
+        CompetitionStatus.running =>
+          'Scoring is live. Pause to prevent judges from submitting scores.',
+        CompetitionStatus.paused =>
+          'Scoring is paused. Judges cannot submit scores right now.',
+        CompetitionStatus.idle =>
+          'Start the competition first to enable this control.',
+        CompetitionStatus.locked =>
+          'Scoring is permanently locked. No changes allowed.',
+      },
+      actions: [
+        if (canToggle)
+          _Btn(
+            label: _status == CompetitionStatus.paused
+                ? 'Resume Scoring'
+                : 'Pause Scoring',
+            icon: _status == CompetitionStatus.paused
+                ? Icons.play_arrow_rounded
+                : Icons.pause_rounded,
+            color: Colors.orange,
+            onTap: _togglePauseResume,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLockCard() {
+    final canLock =
+        _status != CompetitionStatus.idle &&
+        _status != CompetitionStatus.locked;
+    final isLocked = _status == CompetitionStatus.locked;
+
+    return _ControlCard(
+      icon: Icons.lock_rounded,
+      color: AppColors.danger,
+      title: 'Lock Final Results',
+      description: isLocked
+          ? 'Results are locked. No further submissions allowed. Use Admin Override if a correction is needed.'
+          : 'Lock scoring after all performances to prevent further score changes.',
+      actions: [
+        if (canLock)
+          _Btn(
+            label: 'Lock Results',
+            icon: Icons.lock_rounded,
+            color: AppColors.danger,
+            onTap: _lockFinalResults,
+          ),
+        if (isLocked)
+          _Btn(
+            label: 'Admin Override',
+            icon: Icons.lock_open_rounded,
+            color: Colors.blueGrey,
+            onTap: _unlockResults,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBackupCard() {
+    return _ControlCard(
+      icon: Icons.backup_rounded,
+      color: AppColors.secondary,
+      title: 'Backup & Restore',
+      description: _lastBackupTime != null
+          ? 'Last backup: $_lastBackupTime\nKeep backups frequent to avoid data loss.'
+          : 'No backup created yet. Back up your data regularly.',
+      actions: [
+        _Btn(
+          label: 'Save Backup',
+          icon: Icons.save_rounded,
+          color: AppColors.secondary,
+          onTap: _backupData,
         ),
-
-        if (_startTime != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            "Started: ${_startTime!.toLocal()}",
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
-          ),
-        ],
-        if (_lockedAt != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            "Locked at: ${_lockedAt!.toLocal()}",
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.red),
-          ),
-        ],
-
-        const SizedBox(height: 30),
-
-        // ── Cards Grid ──
-        Expanded(
-          child: GridView.count(
-            crossAxisCount: 2,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            childAspectRatio: 1.4,
-            children: [
-              // Card 1: Start Competition
-              _ControlCard(
-                icon: Icons.flag_rounded,
-                title: "Start Competition",
-                description: _status == CompetitionStatus.idle
-                    ? "Competition is idle. Ready to start."
-                    : "Competition is currently $_statusLabel.",
-                color: Colors.green,
-                actions: [
-                  if (_status == CompetitionStatus.idle)
-                    _ActionButton(
-                      label: "Start",
-                      icon: Icons.play_arrow_rounded,
-                      color: Colors.green,
-                      onTap: _startCompetition,
-                    ),
-                  if (_status != CompetitionStatus.idle &&
-                      _status != CompetitionStatus.locked)
-                    _ActionButton(
-                      label: "End",
-                      icon: Icons.stop_rounded,
-                      color: Colors.orange,
-                      onTap: _endCompetition,
-                    ),
-                ],
-              ),
-
-              // Card 2: Pause / Resume
-              _ControlCard(
-                icon: Icons.pause_circle_rounded,
-                title: "Pause / Resume Scoring",
-                description: _status == CompetitionStatus.running
-                    ? "Scoring is live. You can pause anytime."
-                    : _status == CompetitionStatus.paused
-                    ? "Scoring is currently paused."
-                    : "Not available in current state.",
-                color: Colors.orange,
-                actions: [
-                  if (_status == CompetitionStatus.running ||
-                      _status == CompetitionStatus.paused)
-                    _ActionButton(
-                      label: _status == CompetitionStatus.paused
-                          ? "Resume"
-                          : "Pause",
-                      icon: _status == CompetitionStatus.paused
-                          ? Icons.play_arrow_rounded
-                          : Icons.pause_rounded,
-                      color: Colors.orange,
-                      onTap: _togglePauseResume,
-                    ),
-                ],
-              ),
-
-              // Card 3: Lock Final Results
-              _ControlCard(
-                icon: Icons.lock_rounded,
-                title: "Lock Final Results",
-                description: _status == CompetitionStatus.locked
-                    ? "Results are locked at ${_lockedAt?.toLocal()}"
-                    : "Lock scoring to finalize competition results.",
-                color: Colors.red,
-                actions: [
-                  if (_status != CompetitionStatus.idle &&
-                      _status != CompetitionStatus.locked)
-                    _ActionButton(
-                      label: "Lock Results",
-                      icon: Icons.lock_rounded,
-                      color: Colors.red,
-                      onTap: _lockFinalResults,
-                    ),
-                  if (_status == CompetitionStatus.locked)
-                    _ActionButton(
-                      label: "Unlock (Admin)",
-                      icon: Icons.lock_open_rounded,
-                      color: Colors.blueGrey,
-                      onTap: _unlockResults,
-                    ),
-                ],
-              ),
-
-              // Card 4: Backup & Restore
-              _ControlCard(
-                icon: Icons.backup_rounded,
-                title: "Backup & Restore",
-                description: _lastBackupTime != null
-                    ? "Last backup: $_lastBackupTime"
-                    : "No backup taken yet.",
-                color: AppColors.secondary,
-                actions: [
-                  _ActionButton(
-                    label: "Backup",
-                    icon: Icons.save_rounded,
-                    color: AppColors.secondary,
-                    onTap: _backupData,
-                  ),
-                  _ActionButton(
-                    label: "Restore",
-                    icon: Icons.restore_rounded,
-                    color: Colors.blueGrey,
-                    onTap: _restoreData,
-                  ),
-                ],
-              ),
-            ],
-          ),
+        _Btn(
+          label: 'Restore',
+          icon: Icons.restore_rounded,
+          color: _lastBackupTime != null ? Colors.blueGrey : Colors.grey,
+          onTap: _lastBackupTime != null ? _restoreData : null,
+          outline: true,
         ),
       ],
     );
   }
 }
 
-// ─────────────────────────────────────────
-// REUSABLE WIDGETS
-// ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  CONTROL CARD
+// ═══════════════════════════════════════════════════════════════
 
 class _ControlCard extends StatelessWidget {
   final IconData icon;
@@ -398,6 +707,12 @@ class _ControlCard extends StatelessWidget {
   final String description;
   final Color color;
   final List<Widget> actions;
+  final bool showStatusChip;
+  final CompetitionStatus? status;
+  final Color? statusColor;
+  final String? statusLabel;
+  final bool isPulsing;
+  final AnimationController? pulseController;
 
   const _ControlCard({
     required this.icon,
@@ -405,93 +720,297 @@ class _ControlCard extends StatelessWidget {
     required this.description,
     required this.color,
     required this.actions,
+    this.showStatusChip = false,
+    this.status,
+    this.statusColor,
+    this.statusLabel,
+    this.isPulsing = false,
+    this.pulseController,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
+        border: Border.all(color: color.withOpacity(0.12), width: 1.5),
+        boxShadow: [
           BoxShadow(
-            blurRadius: 15,
+            blurRadius: 16,
+            color: color.withOpacity(0.06),
+            offset: const Offset(0, 6),
+          ),
+          const BoxShadow(
+            blurRadius: 8,
             color: AppColors.shadow,
-            offset: Offset(0, 6),
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Top accent bar
+          Container(
+            height: 3,
+            width: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Icon + title row
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 26),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: color.withOpacity(0.2),
+                        width: 1,
+                      ),
+                    ),
+                    child: Icon(icon, color: color, size: 22),
                   ),
+                  if (isPulsing && pulseController != null)
+                    Positioned(
+                      top: -3,
+                      right: -3,
+                      child: AnimatedBuilder(
+                        animation: pulseController!,
+                        builder: (_, __) => Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: color.withOpacity(
+                              0.5 + 0.5 * pulseController!.value,
+                            ),
+                            border: Border.all(
+                              color: AppColors.surface,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    if (showStatusChip &&
+                        statusColor != null &&
+                        statusLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: statusColor!.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: statusColor!.withOpacity(0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 5,
+                                height: 5,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: statusColor,
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                statusLabel!.toUpperCase(),
+                                style: GoogleFonts.dmMono(
+                                  color: statusColor,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
+
           const SizedBox(height: 12),
-          Text(
-            description,
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
-          ),
-          const Spacer(),
-          if (actions.isNotEmpty)
-            Wrap(spacing: 10, children: actions)
-          else
-            Text(
-              "No actions available",
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]),
+
+          // Description
+          Expanded(
+            child: Text(
+              description,
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                color: Colors.grey[500],
+                height: 1.6,
+              ),
             ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Actions
+          if (actions.isEmpty)
+            Text(
+              'No actions available in current state.',
+              style: GoogleFonts.dmSans(
+                fontSize: 11.5,
+                color: Colors.grey[400],
+              ),
+            )
+          else
+            Wrap(spacing: 8, runSpacing: 8, children: actions),
         ],
       ),
     );
   }
 }
 
-class _ActionButton extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════
+//  BTN
+// ═══════════════════════════════════════════════════════════════
+
+class _Btn extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool outline;
 
-  const _ActionButton({
+  const _Btn({
     required this.label,
     required this.icon,
     required this.color,
-    required this.onTap,
+    this.onTap,
+    this.outline = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final disabled = onTap == null;
+
+    if (outline && !disabled) {
+      return OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 14),
+        label: Text(
+          label,
+          style: GoogleFonts.dmSans(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: BorderSide(color: color.withOpacity(0.6), width: 1.5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+
     return ElevatedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 16),
-      label: Text(label, style: GoogleFonts.poppins(fontSize: 13)),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        elevation: 0,
+      icon: Icon(icon, size: 14),
+      label: Text(
+        label,
+        style: GoogleFonts.dmSans(fontSize: 12, fontWeight: FontWeight.w700),
       ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: disabled ? Colors.grey[200] : color,
+        foregroundColor: disabled ? Colors.grey[400] : Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        elevation: disabled ? 0 : 2,
+        shadowColor: disabled ? Colors.transparent : color.withOpacity(0.35),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  LOG ENTRY
+// ═══════════════════════════════════════════════════════════════
+
+class _LogEntry extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String time;
+  final Color color;
+
+  const _LogEntry({
+    required this.icon,
+    required this.label,
+    required this.time,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: Border.all(color: color.withOpacity(0.25), width: 1),
+          ),
+          child: Icon(icon, color: color, size: 14),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 12.5,
+              color: const Color(0xFF374151),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          time,
+          style: GoogleFonts.dmMono(fontSize: 11, color: Colors.grey[400]),
+        ),
+      ],
     );
   }
 }

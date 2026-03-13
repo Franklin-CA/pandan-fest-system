@@ -9,6 +9,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/admin/dance_group_management.dart' hide DanceGroup;
@@ -35,44 +36,54 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Timer? _ticker;
   int _tick = 0;
 
-  static const _nav = [
-    ('Dashboard',       Icons.dashboard_rounded),
-    ('Dance Groups',    Icons.groups_rounded),
-    ('Judges',          Icons.gavel_rounded),
-    ('Criteria Setup',  Icons.rule_folder_rounded),
-    ('Live Control',    Icons.live_tv_rounded),
-    ('Results',         Icons.emoji_events_rounded),
-    ('Overall Winner',  Icons.workspace_premium_rounded),
-    ('Settings',        Icons.settings_rounded),
+  // ── Menu config ─────────────────────────────────────────────
+  static const _menuItems = [
+    'Dashboard',
+    'Dance Groups',
+    'Judges',
+    'Criteria Setup',
+    'Live Control',
+    'Results',
+    'Settings',
   ];
 
-  @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (mounted) setState(() => _tick++);
-    });
+  static const _menuIcons = [
+    Icons.dashboard_rounded,
+    Icons.groups_rounded,
+    Icons.gavel_rounded,
+    Icons.rule_folder_rounded,
+    Icons.live_tv_rounded,
+    Icons.emoji_events_rounded,
+    Icons.settings_rounded,
+  ];
+
+  /// Short helper text shown under each sidebar item
+  static const _menuSubtitles = [
+    'Overview & stats',
+    'Manage performers',
+    'Scoring panel',
+    'Set up weights',
+    'Push & monitor',
+    'Rankings & export',
+    'System controls',
+  ];
+
+  // ── Helpers ──────────────────────────────────────────────────
+  String get _greeting {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
   }
-  @override void dispose() { _ticker?.cancel(); super.dispose(); }
 
-  int get _penaltyBadge => kGroups.where((g) => g.penalties.isNotEmpty).length;
-
-  // ================= CONTENT SWITCH =================
-  
-  Widget _page() {
-    switch (_sel) {
-      case 0: return _DashboardHome(onNavigate: (i) => setState(() => _sel = i));
-      case 1: return const DanceGroupManagement();
-      case 2: return const JudgesManagementScreen();
-      case 3: return const ScoringCriteriaConfiguration();
-      case 4: return const LiveControlPanel();
-      case 5: return const ResultsScreen();
-      case 6: return const OverallWinnerScreen();
-      case 7: return const SettingsControlsScreen();
-      default: return _DashboardHome(onNavigate: (i) => setState(() => _sel = i));
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/');
     }
   }
 
+  // ── Build ────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,9 +166,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
       child: Column(children: [
         const SizedBox(height: 10),
         Expanded(child: ListView.builder(
-          itemCount: _nav.length,
+          itemCount: _menuItems.length,
           itemBuilder: (ctx, i) {
-            final (label, icon) = _nav[i];
+            final (label, icon) = _menuItems[i];
             final sel   = _sel == i;
             final badge = i == 5 && _penaltyBadge > 0;
             return Padding(
@@ -218,6 +229,111 @@ class _AdminDashboardState extends State<AdminDashboard> {
           padding: const EdgeInsets.all(12),
           child: Text('v1.0.0 · PandanFest 2026', style: GoogleFonts.poppins(
               color: Colors.white24, fontSize: 10), textAlign: TextAlign.center),
+        ),
+      ]),
+    );
+  }
+
+  // ── Content Router ───────────────────────────────────────────
+  Widget _buildContent() {
+    switch (selectedIndex) {
+      case 0:
+        return _buildDashboardHome();
+      case 1:
+        return const DanceGroupManagement();
+      case 2:
+        return const JudgesManagementScreen();
+      case 3:
+        return const ScoringCriteriaConfiguration();
+      case 4:
+        return const LiveControlPanel();
+      case 5:
+        return const ResultsScreen();
+      case 6:
+        return const SettingsControlsScreen();
+      default:
+        return _buildDashboardHome();
+    }
+  }
+
+  // ── Dashboard Home ───────────────────────────────────────────
+  Widget _buildDashboardHome() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Page header
+        Row(children: [
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Dashboard Overview', style: GoogleFonts.poppins(
+              fontSize: 25, fontWeight: FontWeight.bold, color: Colors.black87)),
+            Text('PandanFest 2026 · Finals · Live',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500])),
+          ]),
+          const Spacer(),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.secondary,
+              side: const BorderSide(color: AppColors.secondary),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.workspace_premium_rounded, size: 15),
+            label: Text('Overall Winner',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+            onPressed: () => onNavigate(6),
+          ),
+          const SizedBox(width: 10),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.emoji_events_rounded, size: 15),
+            label: Text('View Full Results',
+              style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+            onPressed: () => onNavigate(5),
+          ),
+        ]),
+        const SizedBox(height: 22),
+
+        // Welcome banner
+        _WelcomeBanner(onDismiss: () {}),
+        const SizedBox(height: 24),
+
+        // Stat cards
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final crossCount = constraints.maxWidth > 1400
+                  ? 4
+                  : constraints.maxWidth > 900
+                  ? 3
+                  : 2;
+              return GridView.builder(
+                itemCount: _dashboardCards.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossCount,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: 1.7,
+                ),
+                itemBuilder: (context, index) {
+                  final card = _dashboardCards[index];
+                  return DashboardCard(
+                    title: card['title'] as String,
+                    value: card['value'] as String,
+                    subtitle: card['subtitle'] as String,
+                    icon: card['icon'] as IconData,
+                    color: card['color'] as Color,
+                    onTap: () =>
+                        setState(() => selectedIndex = card['navIndex'] as int),
+                  );
+                },
+              );
+            },
+          ),
         ),
         const SizedBox(height: 8),
       ]),
@@ -557,7 +673,8 @@ class _StatCard extends StatelessWidget {
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
       Container(width: 34, height: 34,
         decoration: BoxDecoration(color: data.color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
-        child: Icon(data.icon, color: data.color, size: 17)),
+        child: Icon(data.icon, color: data.color, size: 17),
+      ),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(data.value, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
         Text(data.label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.black54)),

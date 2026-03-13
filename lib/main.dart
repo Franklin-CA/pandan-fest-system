@@ -1,9 +1,11 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:pandan_fest/admin/admin_dashboard.dart';
-import 'package:pandan_fest/judge/street_dance_scoring_screen.dart';
-import 'package:pandan_fest/judge/focal_presentation_scoring_screen.dart';
+import 'package:pandan_fest/judge/judge_scoring_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   runApp(const MyApp());
 }
 
@@ -22,8 +24,7 @@ class MyApp extends StatelessWidget {
       // ── Named routes ──
       routes: {
         '/': (context) => const AdminDashboard(),
-        '/judge/streetdance': (context) => const StreetDanceScoringScreen(),
-        '/judge/focal': (context) => const FocalPresentationScoringScreen(),
+        '/judge': (context) => const JudgeScoringScreen(),
       },
 
       // ── Fallback for unknown routes ──
