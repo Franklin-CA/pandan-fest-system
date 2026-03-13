@@ -54,7 +54,9 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
 
   @override
   void dispose() {
-    for (final ctrl in _controllers.values) ctrl.dispose();
+    for (final ctrl in _controllers.values) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -105,8 +107,12 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
   }
 
   void _selectContestant(PerformingGroup group) {
-    for (final ctrl in _controllers.values) ctrl.clear();
-    for (final key in _errors.keys) _errors[key] = null;
+    for (final ctrl in _controllers.values) {
+      ctrl.clear();
+    }
+    for (final key in _errors.keys) {
+      _errors[key] = null;
+    }
     LiveSessionState.instance.setActiveGroup(_activeJudge.stageId, group.id);
     setState(() {
       _selectedGroup = group;
@@ -123,8 +129,12 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
   }
 
   void _scoreAnother() {
-    for (final ctrl in _controllers.values) ctrl.clear();
-    for (final key in _errors.keys) _errors[key] = null;
+    for (final ctrl in _controllers.values) {
+      ctrl.clear();
+    }
+    for (final key in _errors.keys) {
+      _errors[key] = null;
+    }
     LiveSessionState.instance.clearActiveGroup(_activeJudge.stageId);
     setState(() {
       _selectedGroup = null;

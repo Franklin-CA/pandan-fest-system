@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pandan_fest/constant/colors.dart';
+import 'package:pandan_fest/main.dart' hide JudgeScoringScreen;
 import '../admin/admin_dashboard.dart';
 import '../judge/judge_scoring_screen.dart';
 import 'login_screen.dart';

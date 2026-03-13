@@ -63,7 +63,9 @@ class _FocalPresentationScoringScreenState extends State<FocalPresentationScorin
   @override
   void dispose() {
     LiveSessionState.instance.removeListener(_onLiveStateChanged);
-    for (final ctrl in _controllers.values) ctrl.dispose();
+    for (final ctrl in _controllers.values) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -95,8 +97,12 @@ class _FocalPresentationScoringScreenState extends State<FocalPresentationScorin
 
   void _loadGroupForScoring(PerformingGroup group) {
     // Reset fields for new contestant
-    for (final ctrl in _controllers.values) ctrl.clear();
-    for (final key in _errors.keys) _errors[key] = null;
+    for (final ctrl in _controllers.values) {
+      ctrl.clear();
+    }
+    for (final key in _errors.keys) {
+      _errors[key] = null;
+    }
     LiveSessionState.instance.setActiveGroup(_activeJudge.stageId, group.id);
     setState(() {
       _activeGroup = group;

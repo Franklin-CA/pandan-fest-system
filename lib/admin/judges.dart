@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:pandan_fest/constant/colors.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  THEME TOKENS
@@ -87,7 +88,6 @@ class Judge {
   bool isLocked;
   DeviceStatus status;
   List<String> assignedCriteria;
-  String assignedStage; // 'Stage 1', 'Stage 2', 'Stage 3', or 'Unassigned'
 
   Judge({
     required this.id,
@@ -96,7 +96,6 @@ class Judge {
     this.isLocked = true,
     this.status = DeviceStatus.offline,
     List<String>? assignedCriteria,
-    this.assignedStage = 'Unassigned',
   }) : assignedCriteria = assignedCriteria ?? [];
 
   String get initials {
@@ -156,7 +155,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       isLocked: false,
       status: DeviceStatus.online,
       assignedCriteria: ['Choreography', 'Showmanship', 'Concept'],
-      assignedStage: 'Stage 1',
     ),
     Judge(
       id: 'J002',
@@ -165,7 +163,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       isLocked: false,
       status: DeviceStatus.online,
       assignedCriteria: ['Musicality', 'Synchronization'],
-      assignedStage: 'Stage 1',
     ),
     Judge(
       id: 'J003',
@@ -174,7 +171,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       isLocked: true,
       status: DeviceStatus.offline,
       assignedCriteria: ['Costume', 'Choreography'],
-      assignedStage: 'Stage 2',
     ),
     Judge(
       id: 'J004',
@@ -183,7 +179,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       isLocked: true,
       status: DeviceStatus.offline,
       assignedCriteria: [],
-      assignedStage: 'Stage 2',
     ),
     Judge(
       id: 'J005',
@@ -192,7 +187,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
       isLocked: false,
       status: DeviceStatus.online,
       assignedCriteria: ['Concept', 'Showmanship'],
-      assignedStage: 'Stage 3',
     ),
   ];
 
@@ -1001,94 +995,55 @@ class _JudgeCard extends StatelessWidget {
               ),
               border: const Border(top: BorderSide(color: _cDivider)),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Stage badge row
-                Row(
-                  children: [
-                    Icon(Icons.flag_rounded, size: 13, color: _cPurple),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Stage:',
-                      style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        color: _cText2,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: _cPurple.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: _cPurple.withOpacity(0.3)),
-                      ),
-                      child: Text(
-                        judge.assignedStage,
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _cPurple,
-                        ),
-                      ),
-                    ),
-                  ],
+                Icon(Icons.label_outline_rounded, size: 13, color: _cText3),
+                const SizedBox(width: 6),
+                Text(
+                  'Assigned Criteria:',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: _cText2,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                const SizedBox(height: 8),
-                // Criteria row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Icon(Icons.label_outline_rounded, size: 13, color: _cText3),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Criteria:',
-                      style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        color: _cText2,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: judge.assignedCriteria.isEmpty
-                          ? GestureDetector(
-                              onTap: onCriteria,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.add_circle_outline_rounded,
-                                    size: 14,
-                                    color: AppColors.secondary.withOpacity(0.7),
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    'No criteria assigned — tap to assign',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppColors.secondary.withOpacity(0.8),
-                                    ),
-                                  ),
-                                ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: judge.assignedCriteria.isEmpty
+                      ? GestureDetector(
+                          onTap: onCriteria,
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.add_circle_outline_rounded,
+                                size: 14,
+                                color: AppColors.secondary.withOpacity(0.7),
                               ),
-                            )
-                          : Wrap(
-                              spacing: 5,
-                              runSpacing: 4,
-                              children: judge.assignedCriteria.map((c) {
-                                final cr = _getCrit(c);
-                                return _CritChip(
-                                  label: c,
-                                  icon: cr.icon,
-                                  color: cr.color,
-                                );
-                              }).toList(),
-                            ),
-                    ),
-                  ],
+                              const SizedBox(width: 5),
+                              Text(
+                                'No criteria assigned — tap to assign',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.secondary.withOpacity(0.8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Wrap(
+                          spacing: 5,
+                          runSpacing: 4,
+                          children: judge.assignedCriteria.map((c) {
+                            final cr = _getCrit(c);
+                            return _CritChip(
+                              label: c,
+                              icon: cr.icon,
+                              color: cr.color,
+                            );
+                          }).toList(),
+                        ),
                 ),
               ],
             ),
@@ -1940,11 +1895,7 @@ class _AddJudgeDialog extends StatefulWidget {
 class _AddJudgeDialogState extends State<_AddJudgeDialog> {
   final _nameCtrl = TextEditingController();
   JudgeRole _role = JudgeRole.guest;
-  String _stage = 'Stage 1';
   bool _showError = false;
-
-  static const _stages = ['Stage 1', 'Stage 2', 'Stage 3'];
-  static const _stageColors = [Color(0xFF5856D6), Color(0xFF007AFF), Color(0xFFAF52DE)];
 
   @override
   void dispose() {
@@ -1963,7 +1914,6 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
         id: 'J${(DateTime.now().millisecondsSinceEpoch % 9000) + 100}',
         name: _nameCtrl.text.trim(),
         role: _role,
-        assignedStage: _stage,
       ),
     );
   }
@@ -2113,46 +2063,6 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
                     ),
                   );
                 }).toList(),
-              ),
-              const SizedBox(height: 20),
-
-              // stage assignment
-              _FLabel('Assigned Stage'),
-              const SizedBox(height: 10),
-              Row(
-                children: List.generate(3, (i) {
-                  const stages = ['Stage 1', 'Stage 2', 'Stage 3'];
-                  const stageColors = [Color(0xFF5856D6), Color(0xFF007AFF), Color(0xFFAF52DE)];
-                  final s = stages[i];
-                  final c = stageColors[i];
-                  final sel = _stage == s;
-                  return Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(right: i < 2 ? 8 : 0),
-                      child: GestureDetector(
-                        onTap: () => setState(() => _stage = s),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 160),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          decoration: BoxDecoration(
-                            color: sel ? c.withOpacity(0.1) : _cBg,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: sel ? c : _cDivider, width: sel ? 1.5 : 1),
-                          ),
-                          child: Column(children: [
-                            Icon(Icons.flag_rounded, size: 14, color: sel ? c : _cText3),
-                            const SizedBox(height: 4),
-                            Text(s, style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
-                              color: sel ? c : _cText2,
-                            )),
-                          ]),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
               ),
               const SizedBox(height: 28),
 
