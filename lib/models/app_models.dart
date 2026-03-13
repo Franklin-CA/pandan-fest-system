@@ -142,6 +142,7 @@ class AppJudge {
   });
 }
 
+<<<<<<< HEAD
 // ─────────────────────────────────────────────────────────────
 // STAGE MODEL
 // ─────────────────────────────────────────────────────────────
@@ -433,3 +434,27 @@ Map<String, List<JudgeScore>> resolvedStageJudgeScores(String stageId) {
     return MapEntry(groupId, resolved);
   });
 }
+=======
+// ═══════════════════════════════════════════════════════════════════
+// COMPETITION STAGE
+//
+// Used by JudgeTopBar to display which stage/round is active.
+// Defined here so both services.dart and judge screens can reference it.
+// ═══════════════════════════════════════════════════════════════════
+
+class CompetitionStage {
+  final String id;
+  final String name;
+  final int order;
+
+  const CompetitionStage({
+    required this.id,
+    required this.name,
+    required this.order,
+  });
+}
+
+// NOTE: staticGroups removed — groups are now loaded exclusively
+// from the dance_groups Firestore collection via JudgeScoreService.groupsStream()
+// and LiveControlPanel._listenGroups().
+>>>>>>> d3f997342664a777ecb1a2022476c936528f9fa7

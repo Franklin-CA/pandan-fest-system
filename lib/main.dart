@@ -1,6 +1,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+<<<<<<< HEAD
 import 'package:pandan_fest/firebase_options.dart';
 import 'package:pandan_fest/admin/admin_dashboard.dart';
 import 'package:pandan_fest/constant/colors.dart';
@@ -84,6 +85,12 @@ class JudgeScoringScreen extends StatelessWidget {
     );
   }
 }
+=======
+import 'package:pandan_fest/auth/auth_gate.dart';
+import 'package:pandan_fest/firebase_options.dart';
+import 'package:pandan_fest/judge/street_dance_scoring_screen.dart';
+import 'package:pandan_fest/judge/focal_presentation_scoring_screen.dart';
+>>>>>>> d3f997342664a777ecb1a2022476c936528f9fa7
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -102,13 +109,22 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Pandan Fest',
 
-      // ── Initial route ──
+      // ── Initial route ──        
       initialRoute: '/',
 
       // ── Named routes ──
       routes: {
+<<<<<<< HEAD
         '/': (context) => const AdminDashboard(),
         '/judge': (context) => const JudgeScoringScreen(),
+=======
+        '/': (context) => const AuthGate(),
+
+        // AuthGate routes judges here based on their category.
+        // Both screens identify the judge via FirebaseAuth.instance.currentUser.
+        '/judge/streetdance': (context) => const StreetDanceScoringScreen(),
+        '/judge/focal': (context) => const FocalPresentationScoringScreen(),
+>>>>>>> d3f997342664a777ecb1a2022476c936528f9fa7
       },
 
       // ── Fallback for unknown routes ──
@@ -133,6 +149,7 @@ class _NotFoundScreen extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline_rounded, size: 64, color: Color(0xFFB71C1C)),
             const SizedBox(height: 16),
+<<<<<<< HEAD
             const Text(
               "Page Not Found",
               style: TextStyle(fontFamily: 'Poppins', fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
@@ -146,12 +163,26 @@ class _NotFoundScreen extends StatelessWidget {
             const Text(
               "Available routes: /judge/streetdance  ·  /judge/focal",
               style: TextStyle(fontFamily: 'Poppins', fontSize: 12, color: Colors.grey),
+=======
+            Text(
+              'Page Not Found',
+              style: GoogleFonts.poppins(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The route you accessed does not exist.',
+              style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
+>>>>>>> d3f997342664a777ecb1a2022476c936528f9fa7
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: () => Navigator.pushReplacementNamed(context, '/'),
               icon: const Icon(Icons.home_rounded),
-              label: const Text("Go to Dashboard"),
+              label: const Text('Go to Dashboard'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFFFD700),
                 foregroundColor: Colors.white,

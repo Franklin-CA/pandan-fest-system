@@ -254,14 +254,14 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
         children: [
           Row(
             children: [
-              Icon(Icons.rule_rounded, color: AppColors.secondary, size: 16),
+              Icon(Icons.rule_rounded, color: AppColors.warning, size: 16),
               const SizedBox(width: 8),
               Text(
                 'General Guidelines — Contingent Size Requirements',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.bold,
                   fontSize: 13,
-                  color: AppColors.secondary,
+                  color: AppColors.warning,
                 ),
               ),
             ],
@@ -270,7 +270,7 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
           Row(
             children: [
               _GuidelineChip(
-                icon: Icons.directions_walk_rounded,
+                icon: Icons.directions_walk_rounded,  
                 label: 'Dancers',
                 value: '$kMinDancers–$kMaxDancers',
                 color: AppColors.primary,
@@ -280,7 +280,7 @@ class _DanceGroupManagementState extends State<DanceGroupManagement> {
                 icon: Icons.construction_rounded,
                 label: 'Propsmen (min)',
                 value: '$kMinPropsmen',
-                color: AppColors.secondary,
+                color: AppColors.warning,
               ),
               const SizedBox(width: 10),
               _GuidelineChip(

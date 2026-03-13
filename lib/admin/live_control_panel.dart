@@ -5,6 +5,7 @@ import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/models/app_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pandan_fest/services.dart';
 
 // ═══════════════════════════════════════════════════════════════
 //  FIRESTORE COLLECTIONS USED
@@ -86,7 +87,7 @@ const List<PerformanceStation> kStations = [
   ),
 ];
 
-enum TimerPreset { streetDance, focalPresentation }
+enum TimerPreset { streetDance, focalPresentation, festivalQueen }
 
 extension TimerPresetExt on TimerPreset {
   String get label {
@@ -95,6 +96,8 @@ extension TimerPresetExt on TimerPreset {
         return 'Street Dance (3–4 min)';
       case TimerPreset.focalPresentation:
         return 'Focal Presentation (7–8 min)';
+      case TimerPreset.festivalQueen:
+        return 'Festival Queen';
     }
   }
 
@@ -104,6 +107,8 @@ extension TimerPresetExt on TimerPreset {
         return 'streetDance';
       case TimerPreset.focalPresentation:
         return 'focalPresentation';
+      case TimerPreset.festivalQueen:
+        return 'festivalQueen';
     }
   }
 
@@ -113,6 +118,8 @@ extension TimerPresetExt on TimerPreset {
         return 180;
       case TimerPreset.focalPresentation:
         return 420;
+      case TimerPreset.festivalQueen:
+        return 0;
     }
   }
 
@@ -122,6 +129,8 @@ extension TimerPresetExt on TimerPreset {
         return 240;
       case TimerPreset.focalPresentation:
         return 480;
+      case TimerPreset.festivalQueen:
+        return 300;
     }
   }
 
@@ -131,12 +140,15 @@ extension TimerPresetExt on TimerPreset {
         return AppColors.primary;
       case TimerPreset.focalPresentation:
         return AppColors.secondary;
+      case TimerPreset.festivalQueen:
+        return AppColors.goldRank;
     }
   }
 }
 
 TimerPreset _presetFromString(String? s) {
   if (s == 'focalPresentation') return TimerPreset.focalPresentation;
+  if (s == 'festivalQueen') return TimerPreset.festivalQueen;
   return TimerPreset.streetDance;
 }
 
@@ -160,7 +172,9 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   String? selectedGroupId;
   String? selectedGroupName;
   String? selectedGroupBarangay;
-  List<String> selectedCriteriaIds = staticCriteria.map((c) => c.id).toList();
+  List<String> selectedCriteriaIds = streetDanceCriteria
+      .map((c) => c.id)
+      .toList();
   bool isPushedToJudges = false;
   bool isPushing = false;
   String? selectedStationId;
@@ -199,11 +213,24 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   List<JudgeScore> get currentScores =>
       selectedGroupId != null ? _liveJudgeScores : [];
 
-  List<RankingEntry> get rankings =>
-      computeRankings(resolvedJudgeScores, _groups, staticCriteria);
+  List<RankingEntry> get rankings => computeRankings(
+    {if (selectedGroupId != null) selectedGroupId!: _liveJudgeScores},
+    _groups,
+    staticCriteria,
+  );
 
   PerformanceStation? get selectedStation => selectedStationId != null
-      ? kStations.firstWhere((s) => s.id == selectedStationId)
+      ? kStations.firstWhere(
+          (s) => s.id == selectedStationId,
+          orElse: () => PerformanceStation(
+            id: selectedStationId!,
+            name: _timerPreset == TimerPreset.focalPresentation
+                ? 'Focal Stage'
+                : 'Festival Queen Stage',
+            description: '',
+            icon: Icons.star_rounded,
+          ),
+        )
       : null;
 
   // ── Timer helpers ──
@@ -286,34 +313,42 @@ class _LiveControlPanelState extends State<LiveControlPanel>
           final timerRunning = d['timerRunning'] as bool? ?? false;
           final timerElapsed = d['timerElapsed'] as int? ?? 0;
 
+          // Read directly from snapshot (not from setState) so they're
+          // immediately available for _listenJudgeScores below.
+          final incomingGroupId = d['groupId'] as String?;
+          final incomingStationId = d['stationId'] as String?;
+
           setState(() {
             isPushedToJudges = d['isPushed'] as bool? ?? false;
-            selectedGroupId = d['groupId'] as String?;
+            selectedGroupId = incomingGroupId;
             selectedGroupName = d['groupName'] as String?;
             selectedGroupBarangay = d['barangay'] as String?;
-            selectedStationId = d['stationId'] as String?;
+            selectedStationId = incomingStationId;
             final rawIds = d['criteriaIds'];
             if (rawIds != null) selectedCriteriaIds = List<String>.from(rawIds);
             _timerPreset = _presetFromString(d['timerPreset'] as String?);
 
-            // Only update timer state from Firestore if we're not locally running
-            // (prevents overwriting the locally-ticking counter on each write)
             if (!_timerRunning) {
               _elapsedSeconds = timerElapsed;
               if (timerRunning) _startTimerLocal();
             }
           });
 
-          // Listen to judge scores for this group
-          if (selectedGroupId != null) _listenJudgeScores(selectedGroupId!);
+          // FIX 3: Use snapshot values directly — not selectedGroupId/selectedStationId
+          // which may have been null before this setState resolved.
+          // FIX 1: Pass stationId so only current station's scores are shown.
+          if (incomingGroupId != null && incomingStationId != null) {
+            _listenJudgeScores(incomingGroupId, incomingStationId);
+          }
         });
   }
 
-  void _listenJudgeScores(String groupId) {
+  void _listenJudgeScores(String groupId, String stationId) {
     _scoresSub?.cancel();
     _scoresSub = _db
         .collection('judge_scores')
         .where('groupId', isEqualTo: groupId)
+        .where('stationId', isEqualTo: stationId)
         .where('sessionId', isEqualTo: 'current')
         .snapshots()
         .listen((snap) {
@@ -350,21 +385,33 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   }
 
   Future<void> _pushToJudges() async {
+    final isStreetDance = _timerPreset == TimerPreset.streetDance;
     if (selectedGroupId == null ||
         activeCriteria.isEmpty ||
-        selectedStationId == null) {
+        (isStreetDance && selectedStationId == null)) {
       return;
     }
     final user = _auth.currentUser;
     setState(() => isPushing = true);
+
+    final sId = isStreetDance
+        ? selectedStationId
+        : (_timerPreset == TimerPreset.focalPresentation
+              ? 'focal_stage'
+              : 'queen_stage');
+    final sName = isStreetDance
+        ? selectedStation?.name
+        : (_timerPreset == TimerPreset.focalPresentation
+              ? 'Focal Stage'
+              : 'Festival Queen Stage');
 
     try {
       await _db.collection('live_sessions').doc('current').set({
         'groupId': selectedGroupId,
         'groupName': selectedGroup?.name ?? selectedGroupName ?? '',
         'barangay': selectedGroup?.barangay ?? selectedGroupBarangay ?? '',
-        'stationId': selectedStationId,
-        'stationName': selectedStation?.name ?? '',
+        'stationId': sId,
+        'stationName': sName ?? '',
         'criteriaIds': selectedCriteriaIds,
         'isPushed': true,
         'timerElapsed': _elapsedSeconds,
@@ -497,23 +544,25 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                           });
                         },
                       ),
-                      const SizedBox(height: 16),
-                      _StationSelector(
-                        stations: kStations,
-                        selectedId: selectedStationId,
-                        onSelect: (id) {
-                          final s = kStations.firstWhere((s) => s.id == id);
-                          setState(() {
-                            selectedStationId = id;
-                            isPushedToJudges = false;
-                          });
-                          _writeSessionPartial({
-                            'stationId': id,
-                            'stationName': s.name,
-                            'isPushed': false,
-                          });
-                        },
-                      ),
+                      if (_timerPreset == TimerPreset.streetDance) ...[
+                        const SizedBox(height: 16),
+                        _StationSelector(
+                          stations: kStations,
+                          selectedId: selectedStationId,
+                          onSelect: (id) {
+                            final s = kStations.firstWhere((s) => s.id == id);
+                            setState(() {
+                              selectedStationId = id;
+                              isPushedToJudges = false;
+                            });
+                            _writeSessionPartial({
+                              'stationId': id,
+                              'stationName': s.name,
+                              'isPushed': false,
+                            });
+                          },
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       _CriteriaSelector(
                         criteria: staticCriteria,
@@ -537,7 +586,8 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                       _PushButton(
                         isReady:
                             selectedGroupId != null &&
-                            selectedStationId != null &&
+                            (_timerPreset != TimerPreset.streetDance ||
+                                selectedStationId != null) &&
                             activeCriteria.isNotEmpty,
                         isPushing: isPushing,
                         isPushed: isPushedToJudges,
@@ -571,10 +621,34 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                             setState(() {
                               _timerPreset = p;
                               _elapsedSeconds = 0;
+                              if (p == TimerPreset.streetDance) {
+                                selectedCriteriaIds = streetDanceCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                if (selectedStationId == 'focal_stage' ||
+                                    selectedStationId == 'queen_stage') {
+                                  selectedStationId = null;
+                                }
+                              } else if (p == TimerPreset.focalPresentation) {
+                                selectedCriteriaIds = focalPresentationCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                selectedStationId = 'focal_stage';
+                              } else {
+                                selectedCriteriaIds = festivalQueenCriteria
+                                    .map((c) => c.id)
+                                    .toList();
+                                selectedStationId = 'queen_stage';
+                              }
                             });
                             _writeSessionPartial({
                               'timerPreset': p.docValue,
                               'timerElapsed': 0,
+                              'criteriaIds': selectedCriteriaIds,
+                              'stationId': selectedStationId,
+                              'stationName': p == TimerPreset.streetDance
+                                  ? null
+                                  : 'Main Display',
                             });
                           }
                         },
@@ -752,22 +826,39 @@ class _LiveControlPanelState extends State<LiveControlPanel>
 
   // ── Step Hint ────────────────────────────────────────────────
   Widget _buildStepHint() {
-    final step = selectedGroupId == null
-        ? 1
-        : selectedStationId == null
-        ? 2
-        : activeCriteria.isEmpty
-        ? 3
-        : !isPushedToJudges
-        ? 4
-        : 5;
+    final isStreetDance = _timerPreset == TimerPreset.streetDance;
+
+    int currentStep = 1;
+    if (selectedGroupId != null) {
+      if (isStreetDance && selectedStationId == null) {
+        currentStep = 2;
+      } else if (activeCriteria.isEmpty) {
+        currentStep = isStreetDance ? 3 : 2;
+      } else if (!isPushedToJudges) {
+        currentStep = isStreetDance ? 4 : 3;
+      } else {
+        currentStep = isStreetDance ? 5 : 4;
+      }
+    }
 
     final steps = [
-      _StepInfo(1, 'Select Group', step >= 1),
-      _StepInfo(2, 'Select Station', step >= 2),
-      _StepInfo(3, 'Confirm Criteria', step >= 3),
-      _StepInfo(4, 'Push to Judges', step >= 4),
-      _StepInfo(5, 'Monitor Live', step >= 5),
+      _StepInfo(1, 'Select Group', currentStep >= 1),
+      if (isStreetDance) _StepInfo(2, 'Select Station', currentStep >= 2),
+      _StepInfo(
+        isStreetDance ? 3 : 2,
+        'Confirm Criteria',
+        currentStep >= (isStreetDance ? 3 : 2),
+      ),
+      _StepInfo(
+        isStreetDance ? 4 : 3,
+        'Push to Judges',
+        currentStep >= (isStreetDance ? 4 : 3),
+      ),
+      _StepInfo(
+        isStreetDance ? 5 : 4,
+        'Monitor Live',
+        currentStep >= (isStreetDance ? 5 : 4),
+      ),
     ];
 
     return Container(
@@ -781,12 +872,12 @@ class _LiveControlPanelState extends State<LiveControlPanel>
         children: steps
             .expand(
               (s) => [
-                _StepChip(info: s, isCurrent: s.number == step),
-                if (s.number < steps.length)
+                _StepChip(info: s, isCurrent: s.number == currentStep),
+                if (s.number < steps.last.number)
                   Expanded(
                     child: Container(
                       height: 1,
-                      color: s.number < step
+                      color: s.number < currentStep
                           ? AppColors.secondary.withOpacity(0.4)
                           : AppColors.divider,
                     ),
@@ -1950,7 +2041,7 @@ class _ScoreDisplay extends StatelessWidget {
         .where((j) => j.isSubmitted && j.scores.isNotEmpty)
         .toList();
     if (submitted.isEmpty) return 0;
-    return submitted.fold(0.0, (s, j) => s + j.totalWeighted(staticCriteria)) /
+    return submitted.fold(0.0, (s, j) => s + j.totalWeighted(criteria)) /
         submitted.length;
   }
 
@@ -2289,7 +2380,7 @@ class _JudgeScoreRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  judgeScore.totalWeighted(staticCriteria).toStringAsFixed(1),
+                  judgeScore.totalWeighted(criteria).toStringAsFixed(1),
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
