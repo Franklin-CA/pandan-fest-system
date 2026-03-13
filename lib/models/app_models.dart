@@ -1,8 +1,9 @@
 // ============================================================
 // app_models.dart
 // Shared data models used by both Admin and Judge screens.
-// Replace static data here with Firebase streams when ready.
 // ============================================================
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ================= MODELS =================
 
@@ -27,6 +28,7 @@ class ActiveCriterion {
   final String name;
   final double weight;
   final double maxScore;
+  final double minScore;
   final String description;
 
   const ActiveCriterion({
@@ -34,8 +36,27 @@ class ActiveCriterion {
     required this.name,
     required this.weight,
     required this.maxScore,
+    this.minScore = 0,
     this.description = '',
   });
+
+  factory ActiveCriterion.fromMap(Map<String, dynamic> m) => ActiveCriterion(
+    id: m['id'] as String,
+    name: m['name'] as String,
+    weight: (m['weight'] as num).toDouble(),
+    maxScore: (m['maxScore'] as num?)?.toDouble() ?? 100,
+    minScore: (m['minScore'] as num?)?.toDouble() ?? 0,
+    description: m['description'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toMap() => {
+    'id': id,
+    'name': name,
+    'weight': weight,
+    'maxScore': maxScore,
+    'minScore': minScore,
+    'description': description,
+  };
 }
 
 class JudgeScore {
@@ -43,12 +64,14 @@ class JudgeScore {
   final String judgeName;
   final Map<String, double> scores; // criterionId -> score
   final bool isSubmitted;
+  final DateTime? submittedAt;
 
   const JudgeScore({
     required this.judgeId,
     required this.judgeName,
     required this.scores,
     required this.isSubmitted,
+    this.submittedAt,
   });
 
   /// Computes the weighted total against the shared criteria list.
@@ -56,12 +79,39 @@ class JudgeScore {
     return scores.entries.fold(0.0, (sum, e) {
       final criterion = criteria.firstWhere(
         (c) => c.id == e.key,
-        orElse: () => const ActiveCriterion(
-            id: '', name: '', weight: 0, maxScore: 100),
+        orElse: () =>
+            const ActiveCriterion(id: '', name: '', weight: 0, maxScore: 100),
       );
       return sum + (e.value * criterion.weight / 100);
     });
   }
+
+  /// Build a JudgeScore from a Firestore document map.
+  factory JudgeScore.fromFirestore(Map<String, dynamic> d) => JudgeScore(
+    judgeId: d['judgeEmail'] as String? ?? '',
+    judgeName: d['judgeEmail'] as String? ?? '',
+    scores: Map<String, double>.from(
+      (d['scores'] as Map<String, dynamic>? ?? {}).map(
+        (k, v) => MapEntry(k, (v as num).toDouble()),
+      ),
+    ),
+    isSubmitted: d['isSubmitted'] as bool? ?? false,
+    submittedAt: (d['submittedAt'] as Timestamp?)?.toDate(),
+  );
+
+  /// Serialize to Firestore document.
+  /// Document ID should be "{judgeEmail}_{groupId}" to prevent duplicates.
+  Map<String, dynamic> toFirestore({
+    required String groupId,
+    required String sessionId,
+  }) => {
+    'judgeEmail': judgeId,
+    'groupId': groupId,
+    'sessionId': sessionId,
+    'scores': scores,
+    'isSubmitted': isSubmitted,
+    'submittedAt': isSubmitted ? FieldValue.serverTimestamp() : null,
+  };
 }
 
 class RankingEntry {
@@ -266,30 +316,35 @@ List<RankingEntry> computeRankings(
   final List<RankingEntry> entries = [];
 
   judgeScores.forEach((groupId, scores) {
-    final submitted =
-        scores.where((j) => j.isSubmitted && j.scores.isNotEmpty).toList();
+    final submitted = scores
+        .where((j) => j.isSubmitted && j.scores.isNotEmpty)
+        .toList();
     if (submitted.isEmpty) return;
 
-    final avg = submitted.fold(0.0, (sum, j) => sum + j.totalWeighted(criteria)) /
+    final avg =
+        submitted.fold(0.0, (sum, j) => sum + j.totalWeighted(criteria)) /
         submitted.length;
 
     final group = groups.firstWhere(
       (g) => g.id == groupId,
       orElse: () => PerformingGroup(
-          id: groupId,
-          name: 'Unknown',
-          barangay: '',
-          theme: '',
-          performanceOrder: 0),
+        id: groupId,
+        name: 'Unknown',
+        barangay: '',
+        theme: '',
+        performanceOrder: 0,
+      ),
     );
 
-    entries.add(RankingEntry(
-      groupId: groupId,
-      groupName: group.name,
-      barangay: group.barangay,
-      averageScore: avg,
-      rank: 0,
-    ));
+    entries.add(
+      RankingEntry(
+        groupId: groupId,
+        groupName: group.name,
+        barangay: group.barangay,
+        averageScore: avg,
+        rank: 0,
+      ),
+    );
   });
 
   entries.sort((a, b) => b.averageScore.compareTo(a.averageScore));
@@ -297,13 +352,15 @@ List<RankingEntry> computeRankings(
   return entries
       .asMap()
       .entries
-      .map((e) => RankingEntry(
-            groupId: e.value.groupId,
-            groupName: e.value.groupName,
-            barangay: e.value.barangay,
-            averageScore: e.value.averageScore,
-            rank: e.key + 1,
-          ))
+      .map(
+        (e) => RankingEntry(
+          groupId: e.value.groupId,
+          groupName: e.value.groupName,
+          barangay: e.value.barangay,
+          averageScore: e.value.averageScore,
+          rank: e.key + 1,
+        ),
+      )
       .toList();
 }
 
@@ -311,7 +368,6 @@ List<RankingEntry> computeRankings(
 
 /// Returns the display name for a judge by their id,
 /// falling back to the raw judgeName field if not found.
-/// TODO: Replace with Firestore lookup when integrating Firebase.
 String resolveJudgeName(String judgeId) {
   final match = staticJudges.firstWhere(
     (j) => j.id == judgeId,
@@ -329,16 +385,22 @@ String resolveJudgePosition(String judgeId) {
   return match.position;
 }
 
-/// Builds a resolved copy of staticJudgeScores with judge names
-/// pulled from staticJudges — single source of truth.
+/// Returns the static resolved judge scores (used as fallback
+/// before Firestore data loads in the Live Control Panel).
+/// The Live Control Panel replaces this with live Firestore
+/// data via its _liveJudgeScores listener.
 Map<String, List<JudgeScore>> get resolvedJudgeScores {
   return staticJudgeScores.map((groupId, scores) {
-    final resolved = scores.map((s) => JudgeScore(
-      judgeId: s.judgeId,
-      judgeName: resolveJudgeName(s.judgeId),
-      scores: s.scores,
-      isSubmitted: s.isSubmitted,
-    )).toList();
+    final resolved = scores
+        .map(
+          (s) => JudgeScore(
+            judgeId: s.judgeId,
+            judgeName: resolveJudgeName(s.judgeId),
+            scores: s.scores,
+            isSubmitted: s.isSubmitted,
+          ),
+        )
+        .toList();
     return MapEntry(groupId, resolved);
   });
 }

@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
-// THEME TOKENS
+//  THEME TOKENS
 // ══════════════════════════════════════════════════════════════════════════════
 
 const _cOnline = Color(0xFF34C759);
@@ -19,7 +19,7 @@ const _cCard = Colors.white;
 const _cDivider = Color(0xFFE5E5EA);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MODELS
+//  MODELS
 // ══════════════════════════════════════════════════════════════════════════════
 
 enum DeviceStatus { online, offline }
@@ -37,6 +37,20 @@ extension JudgeRoleX on JudgeRole {
         return 'Technical Judge';
       case JudgeRole.special:
         return 'Special Judge';
+    }
+  }
+
+  /// Short description shown in the Add Judge dialog
+  String get description {
+    switch (this) {
+      case JudgeRole.head:
+        return 'Oversees all scoring decisions';
+      case JudgeRole.guest:
+        return 'External judge invited for the event';
+      case JudgeRole.technical:
+        return 'Evaluates technical execution';
+      case JudgeRole.special:
+        return 'Scores a specific special category';
     }
   }
 
@@ -92,7 +106,7 @@ class Judge {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// CRITERIA DATA
+//  CRITERIA
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _Crit {
@@ -117,7 +131,7 @@ _Crit _getCrit(String name) => _kCriteria.firstWhere(
 );
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SCREEN
+//  SCREEN
 // ══════════════════════════════════════════════════════════════════════════════
 
 class JudgesManagementScreen extends StatefulWidget {
@@ -208,28 +222,34 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
   int get _lockedCount => _judges.where((j) => j.isLocked).length;
   int get _unlockedCount => _judges.length - _lockedCount;
 
-  // ── dialogs ──────────────────────────────────────────────────────────────
-
+  // ── Actions ───────────────────────────────────────────────────
   Future<void> _addJudge() async {
     final j = await showDialog<Judge>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const _AddJudgeDialog(),
     );
-    if (j != null) setState(() => _judges.add(j));
+    if (j != null) {
+      setState(() => _judges.add(j));
+      _toast('${j.name} has been added as ${j.role.label}.', _cOnline);
+    }
   }
 
   Future<void> _removeJudge(Judge j) async {
     final ok = await _confirm(
       icon: Icons.person_remove_rounded,
       iconColor: _cOffline,
-      title: 'Remove Judge',
+      title: 'Remove ${j.name}?',
       body:
-          'Remove ${j.name} from the judging panel?\nThis action cannot be undone.',
-      confirmLabel: 'Remove',
+          '${j.name} will be removed from the judging panel and '
+          'their assigned criteria will be cleared. This cannot be undone.',
+      confirmLabel: 'Remove Judge',
       confirmColor: _cOffline,
     );
-    if (ok) setState(() => _judges.remove(j));
+    if (ok) {
+      setState(() => _judges.remove(j));
+      _toast('${j.name} has been removed from the panel.', _cOffline);
+    }
   }
 
   Future<void> _openCriteria(Judge j) async {
@@ -240,19 +260,29 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
         current: List.from(j.assignedCriteria),
       ),
     );
-    if (res != null) setState(() => j.assignedCriteria = res);
+    if (res != null) {
+      setState(() => j.assignedCriteria = res);
+      _toast('Criteria updated for ${j.name}.', _cBlue);
+    }
   }
 
-  void _toggleLock(Judge j) => setState(() => j.isLocked = !j.isLocked);
+  void _toggleLock(Judge j) {
+    setState(() => j.isLocked = !j.isLocked);
+    final msg = j.isLocked
+        ? '${j.name}\'s panel is now locked. They cannot submit scores.'
+        : '${j.name}\'s panel is now unlocked. They can submit scores.';
+    _toast(msg, j.isLocked ? _cLocked : _cOnline);
+  }
 
   Future<void> _lockAll() async {
     final ok = await _confirm(
       icon: Icons.lock_rounded,
       iconColor: _cLocked,
-      title: 'Lock All Panels',
+      title: 'Lock All Panels?',
       body:
-          'All ${_judges.length} judges will be prevented from submitting scores.',
-      confirmLabel: 'Lock All',
+          'All ${_judges.length} judges will be prevented from submitting '
+          'or changing scores until you unlock them.',
+      confirmLabel: 'Lock All Panels',
       confirmColor: _cLocked,
     );
     if (ok) {
@@ -261,6 +291,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
           j.isLocked = true;
         }
       });
+      _toast('All ${_judges.length} judging panels are now locked.', _cLocked);
     }
   }
 
@@ -268,9 +299,11 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
     final ok = await _confirm(
       icon: Icons.lock_open_rounded,
       iconColor: _cOnline,
-      title: 'Unlock All Panels',
-      body: 'All ${_judges.length} judges will be allowed to submit scores.',
-      confirmLabel: 'Unlock All',
+      title: 'Unlock All Panels?',
+      body:
+          'All ${_judges.length} judges will be allowed to submit scores. '
+          'Make sure the current performing group has been pushed to them first.',
+      confirmLabel: 'Unlock All Panels',
       confirmColor: _cOnline,
     );
     if (ok) {
@@ -279,7 +312,23 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
           j.isLocked = false;
         }
       });
+      _toast(
+        'All ${_judges.length} judging panels are now unlocked.',
+        _cOnline,
+      );
     }
+  }
+
+  void _toast(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: GoogleFonts.poppins(color: Colors.white)),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<bool> _confirm({
@@ -304,19 +353,16 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
     return r ?? false;
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // BUILD
-  // ══════════════════════════════════════════════════════════════════════════
-
+  // ── Build ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
         _buildStats(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 18),
         _buildTabBar(),
         const SizedBox(height: 16),
         Expanded(
@@ -340,8 +386,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
     );
   }
 
-  // ── header ───────────────────────────────────────────────────────────────
-
+  // ── Header ─────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -349,7 +394,6 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // count badge
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
               decoration: BoxDecoration(
@@ -357,7 +401,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                '${_judges.length} JUDGES',
+                '${_judges.length} JUDGES REGISTERED',
                 style: GoogleFonts.poppins(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
@@ -377,28 +421,32 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
             ),
             const SizedBox(height: 2),
             Text(
-              'Control panel access, scoring criteria & device status',
+              'Assign criteria, control scoring panels, and monitor device connections',
               style: GoogleFonts.poppins(fontSize: 12.5, color: _cText2),
             ),
           ],
         ),
         const Spacer(),
-        // ghost buttons
-        _GhostBtn(
-          icon: Icons.lock_rounded,
-          label: 'Lock All',
-          color: _cLocked,
-          onTap: _lockAll,
+        Tooltip(
+          message: 'Prevent all judges from submitting scores',
+          child: _GhostBtn(
+            icon: Icons.lock_rounded,
+            label: 'Lock All',
+            color: _cLocked,
+            onTap: _lockAll,
+          ),
         ),
         const SizedBox(width: 8),
-        _GhostBtn(
-          icon: Icons.lock_open_rounded,
-          label: 'Unlock All',
-          color: _cOnline,
-          onTap: _unlockAll,
+        Tooltip(
+          message: 'Allow all judges to submit scores',
+          child: _GhostBtn(
+            icon: Icons.lock_open_rounded,
+            label: 'Unlock All',
+            color: _cOnline,
+            onTap: _unlockAll,
+          ),
         ),
         const SizedBox(width: 10),
-        // primary button — ElevatedButton, no FilledButton
         ElevatedButton.icon(
           onPressed: _addJudge,
           icon: const Icon(Icons.person_add_rounded, size: 17),
@@ -423,8 +471,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
     );
   }
 
-  // ── stats ─────────────────────────────────────────────────────────────────
-
+  // ── Stats ──────────────────────────────────────────────────────
   Widget _buildStats() {
     return Row(
       children: [
@@ -437,7 +484,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
         const SizedBox(width: 12),
         _StatCard(
           icon: Icons.wifi_rounded,
-          label: 'Online',
+          label: 'Online Now',
           value: '$_onlineCount',
           color: _cOnline,
         ),
@@ -466,8 +513,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
     );
   }
 
-  // ── tab bar ───────────────────────────────────────────────────────────────
-
+  // ── Tab Bar ────────────────────────────────────────────────────
   Widget _buildTabBar() {
     return Container(
       decoration: BoxDecoration(
@@ -538,7 +584,7 @@ class _JudgesManagementScreenState extends State<JudgesManagementScreen>
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SHARED SMALL WIDGETS
+//  SHARED SMALL WIDGETS
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _GhostBtn extends StatelessWidget {
@@ -546,7 +592,6 @@ class _GhostBtn extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   const _GhostBtn({
     required this.icon,
     required this.label,
@@ -577,7 +622,6 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final String label, value;
   final Color color;
-
   const _StatCard({
     required this.icon,
     required this.label,
@@ -639,7 +683,7 @@ class _StatCard extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 1 — JUDGES
+//  TAB 1 — JUDGES LIST
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _JudgesTabView extends StatelessWidget {
@@ -662,12 +706,12 @@ class _JudgesTabView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // search bar
+        // Search
         TextField(
           controller: searchCtrl,
           style: GoogleFonts.poppins(fontSize: 13.5, color: _cText1),
           decoration: InputDecoration(
-            hintText: 'Search by name, role, or ID…',
+            hintText: 'Search by judge name, role, or ID…',
             hintStyle: GoogleFonts.poppins(color: _cText3, fontSize: 13),
             prefixIcon: Icon(Icons.search_rounded, color: _cText3, size: 20),
             suffixIcon: searchCtrl.text.isNotEmpty
@@ -675,6 +719,7 @@ class _JudgesTabView extends StatelessWidget {
                     icon: Icon(Icons.close_rounded, size: 17, color: _cText3),
                     splashRadius: 16,
                     onPressed: searchCtrl.clear,
+                    tooltip: 'Clear search',
                   )
                 : null,
             filled: true,
@@ -697,22 +742,23 @@ class _JudgesTabView extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 4),
-        // results hint
+        // Results hint
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 180),
           child: searchCtrl.text.trim().isNotEmpty
               ? Padding(
                   key: const ValueKey('hint'),
-                  padding: const EdgeInsets.only(top: 6, bottom: 2, left: 2),
+                  padding: const EdgeInsets.only(top: 7, bottom: 2, left: 2),
                   child: Text(
-                    '${judges.length} result${judges.length != 1 ? 's' : ''} for "${searchCtrl.text.trim()}"',
+                    judges.isEmpty
+                        ? 'No judges match "${searchCtrl.text.trim()}" — try a different name or role'
+                        : '${judges.length} result${judges.length != 1 ? 's' : ''} for "${searchCtrl.text.trim()}"',
                     style: GoogleFonts.poppins(fontSize: 11.5, color: _cText2),
                   ),
                 )
               : const SizedBox(key: ValueKey('empty'), height: 10),
         ),
-        // list
+        // List
         Expanded(
           child: judges.isEmpty
               ? _EmptyState(query: searchCtrl.text.trim())
@@ -764,9 +810,10 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             query.isEmpty
-                ? 'Press "Add Judge" to get started'
-                : 'Try a different name, role, or ID',
+                ? 'Press "Add Judge" above to register the first judge for this competition.'
+                : 'Try searching by a different name, role (e.g. "Head Judge"), or judge ID.',
             style: GoogleFonts.poppins(fontSize: 12.5, color: _cText3),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -774,7 +821,7 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-// ── Judge card ────────────────────────────────────────────────────────────────
+// ── Judge Card ─────────────────────────────────────────────────
 
 class _JudgeCard extends StatelessWidget {
   final Judge judge;
@@ -807,20 +854,18 @@ class _JudgeCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // ── main row ────────────────────────────────────────
+          // Main row
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 15, 12, 13),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // avatar
                 _Avatar(
                   initials: judge.initials,
                   roleColor: judge.role.color,
                   isOnline: isOnline,
                 ),
                 const SizedBox(width: 14),
-                // name + meta
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -873,7 +918,9 @@ class _JudgeCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            isOnline ? 'Online' : 'Offline',
+                            isOnline
+                                ? 'Online — device connected'
+                                : 'Offline — device not connected',
                             style: GoogleFonts.poppins(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w500,
@@ -887,7 +934,7 @@ class _JudgeCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                // right controls
+                // Right controls
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -896,27 +943,39 @@ class _JudgeCard extends StatelessWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _ActionBtn(
-                          icon: Icons.rule_rounded,
-                          label: 'Assign Criteria',
-                          color: _cBlue,
-                          onTap: onCriteria,
+                        Tooltip(
+                          message:
+                              'Assign or change scoring criteria for this judge',
+                          child: _ActionBtn(
+                            icon: Icons.rule_rounded,
+                            label: 'Criteria',
+                            color: _cBlue,
+                            onTap: onCriteria,
+                          ),
                         ),
                         const SizedBox(width: 5),
-                        _ActionBtn(
-                          icon: isLocked
-                              ? Icons.lock_open_rounded
-                              : Icons.lock_rounded,
-                          label: isLocked ? 'Unlock Panel' : 'Lock Panel',
-                          color: isLocked ? _cOnline : _cLocked,
-                          onTap: onToggleLock,
+                        Tooltip(
+                          message: isLocked
+                              ? 'Unlock panel — allow this judge to submit scores'
+                              : 'Lock panel — prevent this judge from submitting',
+                          child: _ActionBtn(
+                            icon: isLocked
+                                ? Icons.lock_open_rounded
+                                : Icons.lock_rounded,
+                            label: isLocked ? 'Unlock' : 'Lock',
+                            color: isLocked ? _cOnline : _cLocked,
+                            onTap: onToggleLock,
+                          ),
                         ),
                         const SizedBox(width: 5),
-                        _ActionBtn(
-                          icon: Icons.person_remove_rounded,
-                          label: 'Remove Judge',
-                          color: _cOffline,
-                          onTap: onRemove,
+                        Tooltip(
+                          message: 'Remove this judge from the panel',
+                          child: _ActionBtn(
+                            icon: Icons.person_remove_rounded,
+                            label: 'Remove',
+                            color: _cOffline,
+                            onTap: onRemove,
+                          ),
                         ),
                       ],
                     ),
@@ -925,7 +984,7 @@ class _JudgeCard extends StatelessWidget {
               ],
             ),
           ),
-          // ── criteria footer ──────────────────────────────────
+          // Criteria footer
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -942,7 +1001,7 @@ class _JudgeCard extends StatelessWidget {
                 Icon(Icons.label_outline_rounded, size: 13, color: _cText3),
                 const SizedBox(width: 6),
                 Text(
-                  'Criteria:',
+                  'Assigned Criteria:',
                   style: GoogleFonts.poppins(
                     fontSize: 11,
                     color: _cText2,
@@ -963,7 +1022,7 @@ class _JudgeCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 5),
                               Text(
-                                'Tap to assign criteria',
+                                'No criteria assigned — tap to assign',
                                 style: GoogleFonts.poppins(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
@@ -1004,13 +1063,12 @@ class _JudgeCard extends StatelessWidget {
   );
 }
 
-// ── judge card sub-widgets ────────────────────────────────────────────────────
+// ── Judge card sub-widgets ──────────────────────────────────────
 
 class _Avatar extends StatelessWidget {
   final String initials;
   final Color roleColor;
   final bool isOnline;
-
   const _Avatar({
     required this.initials,
     required this.roleColor,
@@ -1116,7 +1174,7 @@ class _LockBadge extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            isLocked ? 'Locked' : 'Unlocked',
+            isLocked ? 'Panel Locked' : 'Panel Unlocked',
             style: GoogleFonts.poppins(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -1134,7 +1192,6 @@ class _ActionBtn extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   const _ActionBtn({
     required this.icon,
     required this.label,
@@ -1144,21 +1201,30 @@ class _ActionBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      preferBelow: false,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: color.withOpacity(0.2)),
-          ),
-          child: Icon(icon, size: 16, color: color),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1169,7 +1235,6 @@ class _CritChip extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
-
   const _CritChip({
     required this.label,
     required this.icon,
@@ -1205,13 +1270,12 @@ class _CritChip extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 2 — CRITERIA
+//  TAB 2 — CRITERIA OVERVIEW
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _CriteriaTabView extends StatelessWidget {
   final List<Judge> judges;
   final Future<void> Function(Judge) onEditJudge;
-
   const _CriteriaTabView({required this.judges, required this.onEditJudge});
 
   @override
@@ -1219,9 +1283,9 @@ class _CriteriaTabView extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.zero,
       children: [
-        // banner
+        // Info banner
         Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -1248,22 +1312,25 @@ class _CriteriaTabView extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Criteria Assignment Overview',
-                    style: GoogleFonts.poppins(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: _cText1,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Criteria Assignment Overview',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: _cText1,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${_kCriteria.length} scoring categories  ·  ${judges.length} judges',
-                    style: GoogleFonts.poppins(fontSize: 12, color: _cText2),
-                  ),
-                ],
+                    Text(
+                      '${_kCriteria.length} scoring categories · ${judges.length} judges · '
+                      'Tap a judge name to edit their assignment',
+                      style: GoogleFonts.poppins(fontSize: 12, color: _cText2),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -1293,7 +1360,6 @@ class _CriteriaCard extends StatelessWidget {
   final List<Judge> assigned;
   final int total;
   final Future<void> Function(Judge) onEditJudge;
-
   const _CriteriaCard({
     required this.crit,
     required this.assigned,
@@ -1304,7 +1370,6 @@ class _CriteriaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pct = total == 0 ? 0.0 : assigned.length / total;
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1348,7 +1413,7 @@ class _CriteriaCard extends StatelessWidget {
                     ),
                     const Spacer(),
                     Text(
-                      '${assigned.length} / $total',
+                      '${assigned.length} of $total judge${total != 1 ? 's' : ''} assigned',
                       style: GoogleFonts.poppins(
                         fontSize: 11.5,
                         color: _cText2,
@@ -1358,13 +1423,17 @@ class _CriteriaCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: pct,
-                    minHeight: 5,
-                    backgroundColor: const Color(0xFFF2F2F7),
-                    valueColor: AlwaysStoppedAnimation<Color>(crit.color),
+                Tooltip(
+                  message:
+                      '${(pct * 100).toStringAsFixed(0)}% of judges assigned to this criterion',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: pct,
+                      minHeight: 5,
+                      backgroundColor: const Color(0xFFF2F2F7),
+                      valueColor: AlwaysStoppedAnimation<Color>(crit.color),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -1378,7 +1447,7 @@ class _CriteriaCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 5),
                           Text(
-                            'No judges assigned yet',
+                            'No judges assigned to this criterion yet',
                             style: GoogleFonts.poppins(
                               fontSize: 11,
                               color: _cText3,
@@ -1393,24 +1462,27 @@ class _CriteriaCard extends StatelessWidget {
                             .map(
                               (j) => GestureDetector(
                                 onTap: () => onEditJudge(j),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 9,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: j.role.color.withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: j.role.color.withOpacity(0.22),
+                                child: Tooltip(
+                                  message: 'Edit ${j.name}\'s criteria',
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 9,
+                                      vertical: 3,
                                     ),
-                                  ),
-                                  child: Text(
-                                    j.name.split(' ').first,
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      color: j.role.color,
-                                      fontWeight: FontWeight.w500,
+                                    decoration: BoxDecoration(
+                                      color: j.role.color.withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: j.role.color.withOpacity(0.22),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      j.name.split(' ').first,
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 11,
+                                        color: j.role.color,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1428,13 +1500,12 @@ class _CriteriaCard extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TAB 3 — DEVICES & PANELS
+//  TAB 3 — DEVICES & PANELS
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _DevicesTabView extends StatelessWidget {
   final List<Judge> judges;
   final void Function(Judge) onToggleLock;
-
   const _DevicesTabView({required this.judges, required this.onToggleLock});
 
   @override
@@ -1454,7 +1525,7 @@ class _DevicesTabView extends StatelessWidget {
           icon: Icons.wifi_rounded,
           color: _cOnline,
           judges: online,
-          emptyMsg: 'No devices are currently online',
+          emptyMsg: 'All devices are currently offline',
         ),
         const SizedBox(height: 20),
         _DeviceSection(
@@ -1476,7 +1547,6 @@ class _DeviceSection extends StatelessWidget {
   final IconData icon;
   final Color color;
   final List<Judge> judges;
-
   const _DeviceSection({
     required this.title,
     required this.icon,
@@ -1571,7 +1641,6 @@ class _DeviceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOnline = judge.status == DeviceStatus.online;
     final color = isOnline ? _cOnline : _cOffline;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: BoxDecoration(
@@ -1611,7 +1680,7 @@ class _DeviceTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'PANDAN-${judge.id}',
+                  'Device ID: PANDAN-${judge.id}',
                   style: GoogleFonts.poppins(fontSize: 11, color: _cText2),
                 ),
               ],
@@ -1655,7 +1724,6 @@ class _DeviceTile extends StatelessWidget {
 class _PanelSection extends StatelessWidget {
   final List<Judge> judges;
   final void Function(Judge) onToggle;
-
   const _PanelSection({required this.judges, required this.onToggle});
 
   @override
@@ -1663,23 +1731,17 @@ class _PanelSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            const Icon(Icons.lock_rounded, color: _cLocked, size: 16),
-            const SizedBox(width: 7),
-            Text(
-              'Scoring Panel Controls',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: _cText1,
-              ),
-            ),
-          ],
+        Text(
+          'Scoring Panel Controls',
+          style: GoogleFonts.poppins(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: _cText1,
+          ),
         ),
         const SizedBox(height: 3),
         Text(
-          'Enable or prevent each judge from submitting scores',
+          'Toggle the switch to allow or prevent each judge from submitting scores',
           style: GoogleFonts.poppins(fontSize: 12, color: _cText2),
         ),
         const SizedBox(height: 12),
@@ -1697,14 +1759,12 @@ class _PanelSection extends StatelessWidget {
 class _PanelTile extends StatelessWidget {
   final Judge judge;
   final VoidCallback onToggle;
-
   const _PanelTile({required this.judge, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     final isLocked = judge.isLocked;
     final toggleColor = isLocked ? _cLocked : _cOnline;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: BoxDecoration(
@@ -1761,51 +1821,55 @@ class _PanelTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   isLocked
-                      ? 'Panel locked — judge cannot submit scores'
-                      : 'Panel open — judge can submit scores',
+                      ? 'Panel locked — judge cannot submit or change scores'
+                      : 'Panel open — judge can submit scores right now',
                   style: GoogleFonts.poppins(fontSize: 11, color: _cText2),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 14),
-          // animated toggle
-          GestureDetector(
-            onTap: onToggle,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeInOut,
-              width: 52,
-              height: 28,
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: toggleColor.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: toggleColor.withOpacity(0.4)),
-              ),
-              child: AnimatedAlign(
+          Tooltip(
+            message: isLocked
+                ? 'Tap to unlock this judge\'s panel'
+                : 'Tap to lock this judge\'s panel',
+            child: GestureDetector(
+              onTap: onToggle,
+              child: AnimatedContainer(
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeInOut,
-                alignment: isLocked
-                    ? Alignment.centerLeft
-                    : Alignment.centerRight,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: toggleColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: toggleColor.withOpacity(0.4),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                    size: 11,
-                    color: _cCard,
+                width: 52,
+                height: 28,
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: toggleColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: toggleColor.withOpacity(0.4)),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeInOut,
+                  alignment: isLocked
+                      ? Alignment.centerLeft
+                      : Alignment.centerRight,
+                  child: Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: toggleColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: toggleColor.withOpacity(0.4),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      isLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                      size: 11,
+                      color: _cCard,
+                    ),
                   ),
                 ),
               ),
@@ -1818,7 +1882,7 @@ class _PanelTile extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DIALOG: ADD JUDGE
+//  DIALOG: ADD JUDGE
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _AddJudgeDialog extends StatefulWidget {
@@ -1840,8 +1904,7 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
   }
 
   void _submit() {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
+    if (_nameCtrl.text.trim().isEmpty) {
       setState(() => _showError = true);
       return;
     }
@@ -1849,7 +1912,7 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
       context,
       Judge(
         id: 'J${(DateTime.now().millisecondsSinceEpoch % 9000) + 100}',
-        name: name,
+        name: _nameCtrl.text.trim(),
         role: _role,
       ),
     );
@@ -1868,7 +1931,7 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // header
+              // Header
               Row(
                 children: [
                   Container(
@@ -1897,7 +1960,7 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
                         ),
                       ),
                       Text(
-                        'Enter the judge\'s information below',
+                        'Register a judge for this competition',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: _cText2,
@@ -1911,8 +1974,15 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
               Divider(color: _cDivider),
               const SizedBox(height: 18),
 
-              // full name
-              _FLabel('Full Name'),
+              // Name field
+              Text(
+                'Full Name *',
+                style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: _cText1,
+                ),
+              ),
               const SizedBox(height: 7),
               TextField(
                 controller: _nameCtrl,
@@ -1923,13 +1993,27 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
                 decoration: _inputDeco(
                   hint: 'e.g. Maria Santos',
                   icon: Icons.person_outline_rounded,
-                  error: _showError ? 'Full name is required' : null,
+                  error: _showError
+                      ? 'Please enter the judge\'s full name.'
+                      : null,
                 ),
               ),
               const SizedBox(height: 20),
 
-              // role chips
-              _FLabel('Judge Role'),
+              // Role
+              Text(
+                'Judge Role *',
+                style: GoogleFonts.poppins(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: _cText1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Select the role that best describes this judge\'s function.',
+                style: GoogleFonts.poppins(fontSize: 11, color: _cText2),
+              ),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -1938,40 +2022,43 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
                   final sel = _role == r;
                   return GestureDetector(
                     onTap: () => setState(() => _role = r),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 9,
-                      ),
-                      decoration: BoxDecoration(
-                        color: sel ? r.color.withOpacity(0.1) : _cBg,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: sel ? r.color : _cDivider,
-                          width: sel ? 1.5 : 1,
+                    child: Tooltip(
+                      message: r.description,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            r.icon,
-                            size: 14,
-                            color: sel ? r.color : _cText3,
+                        decoration: BoxDecoration(
+                          color: sel ? r.color.withOpacity(0.1) : _cBg,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: sel ? r.color : _cDivider,
+                            width: sel ? 1.5 : 1,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            r.label,
-                            style: GoogleFonts.poppins(
-                              fontSize: 12.5,
-                              fontWeight: sel
-                                  ? FontWeight.w600
-                                  : FontWeight.normal,
-                              color: sel ? r.color : _cText2,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              r.icon,
+                              size: 14,
+                              color: sel ? r.color : _cText3,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              r.label,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12.5,
+                                fontWeight: sel
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                color: sel ? r.color : _cText2,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   );
@@ -1979,7 +2066,7 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
               ),
               const SizedBox(height: 28),
 
-              // action row
+              // Actions
               Row(
                 children: [
                   Expanded(
@@ -2032,13 +2119,12 @@ class _AddJudgeDialogState extends State<_AddJudgeDialog> {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DIALOG: ASSIGN CRITERIA
+//  DIALOG: ASSIGN CRITERIA
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _CriteriaDialog extends StatefulWidget {
   final String judgeName;
   final List<String> current;
-
   const _CriteriaDialog({required this.judgeName, required this.current});
 
   @override
@@ -2071,7 +2157,6 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // header
               Row(
                 children: [
                   Container(
@@ -2101,7 +2186,7 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
                           ),
                         ),
                         Text(
-                          widget.judgeName,
+                          'Judging panel for: ${widget.judgeName}',
                           style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: _cText2,
@@ -2110,7 +2195,6 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
                       ],
                     ),
                   ),
-                  // live counter
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 11,
@@ -2132,16 +2216,14 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               Divider(color: _cDivider),
               const SizedBox(height: 6),
               Text(
-                'Tap a criterion to assign or remove it',
+                'Tap a criterion to assign or remove it from this judge\'s scorecard.',
                 style: GoogleFonts.poppins(fontSize: 12, color: _cText2),
               ),
               const SizedBox(height: 14),
-
-              // criteria rows
               ..._kCriteria.map((c) {
                 final isActive = _selected.contains(c.name);
                 return Padding(
@@ -2188,7 +2270,6 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
                               ),
                             ),
                           ),
-                          // animated checkbox
                           AnimatedContainer(
                             duration: const Duration(milliseconds: 160),
                             width: 22,
@@ -2215,8 +2296,6 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
                 );
               }),
               const SizedBox(height: 20),
-
-              // action row
               Row(
                 children: [
                   Expanded(
@@ -2269,7 +2348,7 @@ class _CriteriaDialogState extends State<_CriteriaDialog> {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DIALOG: CONFIRM
+//  DIALOG: CONFIRM
 // ══════════════════════════════════════════════════════════════════════════════
 
 class _ConfirmDialog extends StatelessWidget {
@@ -2293,7 +2372,7 @@ class _ConfirmDialog extends StatelessWidget {
       backgroundColor: _cCard,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: SizedBox(
-        width: 370,
+        width: 380,
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(
@@ -2380,25 +2459,8 @@ class _ConfirmDialog extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// HELPERS
+//  HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
-
-class _FLabel extends StatelessWidget {
-  final String text;
-  const _FLabel(this.text);
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: GoogleFonts.poppins(
-        fontSize: 12.5,
-        fontWeight: FontWeight.w600,
-        color: _cText1,
-      ),
-    );
-  }
-}
 
 InputDecoration _inputDeco({
   required String hint,
@@ -2410,6 +2472,7 @@ InputDecoration _inputDeco({
     hintStyle: GoogleFonts.poppins(color: _cText3, fontSize: 13),
     prefixIcon: Icon(icon, color: _cText3, size: 19),
     errorText: error,
+    errorStyle: GoogleFonts.poppins(fontSize: 11, color: _cOffline),
     filled: true,
     fillColor: _cBg,
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),

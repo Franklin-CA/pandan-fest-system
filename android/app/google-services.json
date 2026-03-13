@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "934609788473",
+    "project_id": "pandanfest",
+    "storage_bucket": "pandanfest.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934609788473:android:ff0ad75043a4f3b19e37e8",
+        "android_client_info": {
+          "package_name": "com.example.pandan_fest"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5OB0a6ZIWRFplqaX6U-j_RlMPpSiKSR8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

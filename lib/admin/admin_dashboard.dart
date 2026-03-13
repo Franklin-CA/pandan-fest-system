@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/admin/dance_group_management.dart';
@@ -18,17 +19,18 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   int selectedIndex = 0;
 
-  final List<String> menuItems = [
-    "Dashboard",
-    "Dance Groups",
-    "Judges",
-    "Criteria Setup",
-    "Live Control",
-    "Results",
-    "Settings",
+  // ── Menu config ─────────────────────────────────────────────
+  static const _menuItems = [
+    'Dashboard',
+    'Dance Groups',
+    'Judges',
+    'Criteria Setup',
+    'Live Control',
+    'Results',
+    'Settings',
   ];
 
-  final List<IconData> menuIcons = [
+  static const _menuIcons = [
     Icons.dashboard_rounded,
     Icons.groups_rounded,
     Icons.gavel_rounded,
@@ -38,6 +40,33 @@ class _AdminDashboardState extends State<AdminDashboard> {
     Icons.settings_rounded,
   ];
 
+  /// Short helper text shown under each sidebar item
+  static const _menuSubtitles = [
+    'Overview & stats',
+    'Manage performers',
+    'Scoring panel',
+    'Set up weights',
+    'Push & monitor',
+    'Rankings & export',
+    'System controls',
+  ];
+
+  // ── Helpers ──────────────────────────────────────────────────
+  String get _greeting {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.of(context).pushReplacementNamed('/');
+    }
+  }
+
+  // ── Build ────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -48,7 +77,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           _buildSidebar(),
           Expanded(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
+              duration: const Duration(milliseconds: 280),
+              transitionBuilder: (child, animation) =>
+                  FadeTransition(opacity: animation, child: child),
               child: Padding(
                 key: ValueKey(selectedIndex),
                 padding: const EdgeInsets.all(30),
@@ -61,8 +92,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // ================= APP BAR =================
-
+  // ── App Bar ──────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: AppColors.primary,
@@ -72,113 +102,248 @@ class _AdminDashboardState extends State<AdminDashboard> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.asset("assets/images/PandanFestLogo.png", height: 40),
+            child: Image.asset('assets/images/PandanFestLogo.png', height: 40),
           ),
-          const SizedBox(width: 15),
-          Text(
-            "PandanFest 2026",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 20,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            "| Street Dance Admin",
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: Colors.white,
-            ),
+          const SizedBox(width: 14),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'PandanFest 2026',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                'Mapandan, Pangasinan · Street Dance Admin',
+                style: GoogleFonts.poppins(fontSize: 11, color: Colors.white60),
+              ),
+            ],
           ),
         ],
       ),
       actions: [
-        IconButton(
-          icon: const Icon(
-            Icons.notifications_none_rounded,
-            color: Colors.white,
+        // Live indicator
+        Container(
+          margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: AppColors.live.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.live.withOpacity(0.5)),
           ),
-          onPressed: () {},
+          child: Row(
+            children: [
+              _PulsingDot(color: AppColors.live),
+              const SizedBox(width: 6),
+              Text(
+                'LIVE',
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
         ),
-        Row(
-          children: [
-            Icon(Icons.circle, color: AppColors.live, size: 10),
-            SizedBox(width: 6),
-            Text("LIVE", style: GoogleFonts.poppins(color: Colors.white)),
-          ],
+        // Notifications
+        Tooltip(
+          message: 'Notifications',
+          child: IconButton(
+            icon: const Icon(
+              Icons.notifications_none_rounded,
+              color: Colors.white,
+            ),
+            onPressed: () {},
+          ),
         ),
-        const SizedBox(width: 20),
-        const CircleAvatar(
-          backgroundColor: Colors.white,
-          child: Icon(Icons.admin_panel_settings, color: Colors.black),
+        // Admin avatar
+        Container(
+          margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: PopupMenuButton<String>(
+            tooltip: 'Admin Account',
+            offset: const Offset(0, 45),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const CircleAvatar(
+              backgroundColor: Colors.transparent,
+              radius: 16,
+              child: Icon(
+                Icons.admin_panel_settings,
+                color: Colors.black87,
+                size: 18,
+              ),
+            ),
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              PopupMenuItem<String>(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Logout',
+                      style: GoogleFonts.poppins(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
-        const SizedBox(width: 20),
+        const SizedBox(width: 16),
       ],
     );
   }
 
-  // ================= SIDEBAR =================
-
+  // ── Sidebar ──────────────────────────────────────────────────
   Widget _buildSidebar() {
     return Container(
-      width: 260,
+      width: 240,
       decoration: const BoxDecoration(
         color: AppColors.sidebarBackground,
         boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
       ),
       child: Column(
         children: [
+          // Welcome strip
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              border: Border(
+                bottom: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _greeting,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white54,
+                    fontSize: 11,
+                  ),
+                ),
+                Text(
+                  'Administrator',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          // Navigation items
           Expanded(
             child: ListView.builder(
-              itemCount: menuItems.length,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              itemCount: _menuItems.length,
               itemBuilder: (context, index) {
                 final isSelected = selectedIndex == index;
                 return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      setState(() {
-                        selectedIndex = index;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 14,
-                        horizontal: 16,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.secondary.withOpacity(0.15)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            menuIcons[index],
-                            color: isSelected
-                                ? AppColors.secondary
-                                : Colors.white70,
-                          ),
-                          const SizedBox(width: 15),
-                          Text(
-                            menuItems[index],
-                            style: GoogleFonts.poppins(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Tooltip(
+                    message: _menuSubtitles[index],
+                    preferBelow: false,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => setState(() => selectedIndex = index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 11,
+                          horizontal: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? AppColors.secondary.withOpacity(0.18)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: isSelected
+                              ? Border.all(
+                                  color: AppColors.secondary.withOpacity(0.3),
+                                )
+                              : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _menuIcons[index],
                               color: isSelected
                                   ? AppColors.secondary
-                                  : Colors.white70,
-                              fontWeight: isSelected
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
+                                  : Colors.white54,
+                              size: 20,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _menuItems[index],
+                                    style: GoogleFonts.poppins(
+                                      color: isSelected
+                                          ? AppColors.secondary
+                                          : Colors.white70,
+                                      fontWeight: isSelected
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    Text(
+                                      _menuSubtitles[index],
+                                      style: GoogleFonts.poppins(
+                                        color: AppColors.secondary.withOpacity(
+                                          0.7,
+                                        ),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: AppColors.secondary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -186,17 +351,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
               },
             ),
           ),
+
+          // Bottom version tag
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Text(
+              'PandanFest Admin v1.0',
+              style: GoogleFonts.poppins(color: Colors.white24, fontSize: 10),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ================= CONTENT SWITCH =================
-
+  // ── Content Router ───────────────────────────────────────────
   Widget _buildContent() {
     switch (selectedIndex) {
       case 0:
-        return _dashboardHome();
+        return _buildDashboardHome();
       case 1:
         return const DanceGroupManagement();
       case 2:
@@ -210,43 +383,88 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 6:
         return const SettingsControlsScreen();
       default:
-        return _dashboardHome();
+        return _buildDashboardHome();
     }
   }
 
-  // ================= DASHBOARD HOME =================
-
-  Widget _dashboardHome() {
+  // ── Dashboard Home ───────────────────────────────────────────
+  Widget _buildDashboardHome() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Dashboard Overview",
-          style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.bold),
+        // Page header
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Dashboard Overview',
+                    style: GoogleFonts.poppins(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    'PandanFest 2026 · Street Dance Competition · Mapandan, Pangasinan',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Quick navigation buttons
+            _QuickNavButton(
+              icon: Icons.live_tv_rounded,
+              label: 'Go Live',
+              color: AppColors.live,
+              onTap: () => setState(() => selectedIndex = 4),
+            ),
+            const SizedBox(width: 10),
+            _QuickNavButton(
+              icon: Icons.emoji_events_rounded,
+              label: 'Results',
+              color: AppColors.goldRank,
+              onTap: () => setState(() => selectedIndex = 5),
+            ),
+          ],
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 24),
+
+        // Welcome banner
+        _WelcomeBanner(onDismiss: () {}),
+        const SizedBox(height: 24),
+
+        // Stat cards
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
-              int crossAxisCount = constraints.maxWidth > 1400
+              final crossCount = constraints.maxWidth > 1400
                   ? 4
                   : constraints.maxWidth > 900
                   ? 3
                   : 2;
-
               return GridView.builder(
-                itemCount: dashboardCards.length,
+                itemCount: _dashboardCards.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 25,
-                  mainAxisSpacing: 25,
-                  childAspectRatio: 1.6,
+                  crossAxisCount: crossCount,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 20,
+                  childAspectRatio: 1.7,
                 ),
                 itemBuilder: (context, index) {
+                  final card = _dashboardCards[index];
                   return DashboardCard(
-                    title: dashboardCards[index]["title"],
-                    value: dashboardCards[index]["value"],
-                    icon: dashboardCards[index]["icon"],
+                    title: card['title'] as String,
+                    value: card['value'] as String,
+                    subtitle: card['subtitle'] as String,
+                    icon: card['icon'] as IconData,
+                    color: card['color'] as Color,
+                    onTap: () =>
+                        setState(() => selectedIndex = card['navIndex'] as int),
                   );
                 },
               );
@@ -257,65 +475,261 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  final List<Map<String, dynamic>> dashboardCards = [
+  final List<Map<String, dynamic>> _dashboardCards = [
     {
-      "title": "Total Dance Groups",
-      "value": "12",
-      "icon": Icons.groups_rounded,
+      'title': 'Dance Groups',
+      'value': '12',
+      'subtitle': 'Registered for Finals',
+      'icon': Icons.groups_rounded,
+      'color': AppColors.secondary,
+      'navIndex': 1,
     },
-    {"title": "Active Judges", "value": "5", "icon": Icons.gavel_rounded},
-    {"title": "Current Phase", "value": "Finals", "icon": Icons.flag_rounded},
-    {"title": "Live Status", "value": "Running", "icon": Icons.live_tv_rounded},
+    {
+      'title': 'Active Judges',
+      'value': '5',
+      'subtitle': '2 online right now',
+      'icon': Icons.gavel_rounded,
+      'color': Color(0xFF007AFF),
+      'navIndex': 2,
+    },
+    {
+      'title': 'Current Phase',
+      'value': 'Finals',
+      'subtitle': 'Tap to manage criteria',
+      'icon': Icons.flag_rounded,
+      'color': Color(0xFFAF52DE),
+      'navIndex': 3,
+    },
+    {
+      'title': 'Live Status',
+      'value': 'Running',
+      'subtitle': 'Scoring in progress',
+      'icon': Icons.live_tv_rounded,
+      'color': AppColors.live,
+      'navIndex': 4,
+    },
   ];
 }
 
-// ================= DASHBOARD CARD =================
+// ── Dashboard Card ────────────────────────────────────────────
 
 class DashboardCard extends StatelessWidget {
   final String title;
   final String value;
+  final String subtitle;
   final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
 
   const DashboardCard({
     super.key,
     required this.title,
     required this.value,
+    required this.subtitle,
     required this.icon,
+    this.color = AppColors.secondary,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(22),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.12)),
+          boxShadow: const [
+            BoxShadow(
+              blurRadius: 14,
+              color: AppColors.shadow,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 22, color: color),
+                ),
+                if (onTap != null)
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 12,
+                    color: Colors.grey[400],
+                  ),
+              ],
+            ),
+            const Spacer(),
+            Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              subtitle,
+              style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Welcome Banner ────────────────────────────────────────────
+
+class _WelcomeBanner extends StatefulWidget {
+  final VoidCallback onDismiss;
+  const _WelcomeBanner({required this.onDismiss});
+
+  @override
+  State<_WelcomeBanner> createState() => _WelcomeBannerState();
+}
+
+class _WelcomeBannerState extends State<_WelcomeBanner> {
+  bool _visible = true;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_visible) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 15,
-            color: AppColors.shadow,
-            offset: Offset(0, 6),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.primary.withOpacity(0.85),
+            AppColors.secondary.withOpacity(0.75),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          const Text('🌿', style: TextStyle(fontSize: 32)),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome to PandanFest 2026 Admin Panel',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  'Use the sidebar to manage dance groups, assign judges, set scoring criteria, and control the live competition.',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white54),
+            onPressed: () => setState(() => _visible = false),
+            tooltip: 'Dismiss',
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 36, color: AppColors.secondary),
-          const Spacer(),
-          Text(
-            value,
-            style: GoogleFonts.poppins(
-              fontSize: 30,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey),
-          ),
-        ],
+    );
+  }
+}
+
+// ── Quick Nav Button ─────────────────────────────────────────
+
+class _QuickNavButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickNavButton({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label, style: GoogleFonts.poppins(fontSize: 13)),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: color,
+        side: BorderSide(color: color.withOpacity(0.6)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+}
+
+// ── Pulsing Dot ──────────────────────────────────────────────
+
+class _PulsingDot extends StatefulWidget {
+  final Color color;
+  const _PulsingDot({required this.color});
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween(
+        begin: 0.4,
+        end: 1.0,
+      ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut)),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
       ),
     );
   }

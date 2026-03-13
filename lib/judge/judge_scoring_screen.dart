@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -104,6 +105,13 @@ class _JudgeScoringScreenState extends State<JudgeScoringScreen> {
     });
   }
 
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (mounted) {
+      Navigator.pushReplacementNamed(context, '/');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -197,35 +205,75 @@ class _JudgeScoringScreenState extends State<JudgeScoringScreen> {
           const SizedBox(width: 16),
 
           // Judge identity
-          Row(
-            children: [
-              const CircleAvatar(
-                radius: 18,
-                backgroundColor: Colors.white24,
-                child: Icon(Icons.gavel_rounded, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    resolveJudgeName(_activeJudgeId),
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
+          PopupMenuButton<String>(
+            tooltip: "Sign Out",
+            color: AppColors.surface,
+            offset: const Offset(0, 44),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            onSelected: (value) {
+              if (value == 'logout') {
+                _logout();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'logout',
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.logout_rounded,
+                      color: AppColors.danger,
+                      size: 20,
                     ),
-                  ),
-                  Text(
-                    resolveJudgePosition(_activeJudgeId),
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: Colors.white60,
+                    const SizedBox(width: 10),
+                    Text(
+                      "Log Out",
+                      style: GoogleFonts.poppins(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
+            child: Row(
+              children: [
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white24,
+                  child: Icon(
+                    Icons.gavel_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      resolveJudgeName(_activeJudgeId),
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      resolveJudgePosition(_activeJudgeId),
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        color: Colors.white60,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
