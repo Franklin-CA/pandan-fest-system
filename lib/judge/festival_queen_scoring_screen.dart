@@ -106,7 +106,9 @@ class _FestivalQueenScoringScreenState
     _groupsSub?.cancel();
     _sessionSub?.cancel();
     _localTick?.cancel();
-    for (final c in _controllers.values) c.dispose();
+    for (final c in _controllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -241,8 +243,12 @@ class _FestivalQueenScoringScreenState
   }
 
   void _loadGroupForScoring(PerformingGroup group) {
-    for (final ctrl in _controllers.values) ctrl.clear();
-    for (final key in _errors.keys) _errors[key] = null;
+    for (final ctrl in _controllers.values) {
+      ctrl.clear();
+    }
+    for (final key in _errors.keys) {
+      _errors[key] = null;
+    }
 
     final key = '${group.id}_$_currentStationId';
     final alreadyScored = _scoredKeys.contains(key);

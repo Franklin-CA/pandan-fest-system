@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/models/app_models.dart';
 import 'package:pandan_fest/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 // NOTE: JudgeScreenState, MaxValueFormatter, and JudgeScoreService
 // are defined in services.dart. Do NOT redefine them here.
