@@ -274,6 +274,11 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
           ? JudgeScreenState.alreadyScored
           : JudgeScreenState.scoring;
     });
+
+    // Automatically start the timer if not already running
+    if (!alreadyScored && _currentStationId != null) {
+      _service.ensureTimerRunning();
+    }
   }
 
   void _backToSelection() {

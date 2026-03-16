@@ -249,7 +249,20 @@ class _FestivalQueenScoringScreenState
 
     setState(() {
       _activeGroup = group;
-      _state = alreadyScored ? _FestivalQueenState.alreadyScored : _FestivalQueenState.scoring;
+      _state = alreadyScored ? _FestivalQueenState.alreadyScored : _FestivalQueenState.ready;
+    });
+  }
+
+  void _beginScoring() {
+    if (_activeGroup == null || _state != _FestivalQueenState.ready) return;
+
+    // Automatically start the timer if not already running
+    if (_currentStationId != null) {
+      _service.ensureTimerRunning();
+    }
+
+    setState(() {
+      _state = _FestivalQueenState.scoring;
     });
   }
 
@@ -365,6 +378,20 @@ class _FestivalQueenScoringScreenState
         );
         break;
 
+      case _FestivalQueenState.ready:
+        if (_activeGroup == null) {
+          body = const Center(child: CircularProgressIndicator(color: _color));
+          break;
+        }
+        body = JudgeReadyToScore(
+          group: _activeGroup!,
+          categoryColor: _color,
+          categoryTitle: _title,
+          categoryIcon: _icon,
+          onScore: _beginScoring,
+        );
+        break;
+
       case _FestivalQueenState.scoring:
         if (_activeGroup == null) {
           body = const Center(child: CircularProgressIndicator(color: _color));
@@ -453,7 +480,7 @@ class _FestivalQueenScoringScreenState
 //  INTERNAL STATE ENUM
 // ══════════════════════════════════════════════════════════════
 
-enum _FestivalQueenState { waiting, scoring, alreadyScored, submitted }
+enum _FestivalQueenState { waiting, ready, scoring, alreadyScored, submitted }
 
 // ══════════════════════════════════════════════════════════════
 //  DUMMY GROUP

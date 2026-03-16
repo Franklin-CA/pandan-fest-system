@@ -327,6 +327,23 @@ class JudgeScoreService {
         .toSet();
   }
 
+  /// Ensures that the global timer is running.
+  /// Called when a judge enters the scoring phase.
+  Future<void> ensureTimerRunning() async {
+    final docRef = _db.collection('live_sessions').doc('current');
+    final snap = await docRef.get();
+    if (snap.exists) {
+      final data = snap.data();
+      final isRunning = data?['timerRunning'] as bool? ?? false;
+      if (!isRunning) {
+        await docRef.update({
+          'timerRunning': true,
+          'timerStartedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    }
+  }
+
   FirebaseFirestore get db => _db;
 }
 

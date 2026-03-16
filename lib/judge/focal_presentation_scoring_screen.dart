@@ -260,7 +260,20 @@ class _FocalPresentationScoringScreenState
 
     setState(() {
       _activeGroup = group;
-      _state = alreadyScored ? _FocalState.alreadyScored : _FocalState.scoring;
+      _state = alreadyScored ? _FocalState.alreadyScored : _FocalState.ready;
+    });
+  }
+
+  void _beginScoring() {
+    if (_activeGroup == null || _state != _FocalState.ready) return;
+    
+    // Automatically start the timer if not already running
+    if (_currentStationId != null) {
+      _service.ensureTimerRunning();
+    }
+
+    setState(() {
+      _state = _FocalState.scoring;
     });
   }
 
@@ -376,6 +389,20 @@ class _FocalPresentationScoringScreenState
         );
         break;
 
+      case _FocalState.ready:
+        if (_activeGroup == null) {
+          body = const Center(child: CircularProgressIndicator(color: _color));
+          break;
+        }
+        body = JudgeReadyToScore(
+          group: _activeGroup!,
+          categoryColor: _color,
+          categoryTitle: _title,
+          categoryIcon: _icon,
+          onScore: _beginScoring,
+        );
+        break;
+
       case _FocalState.scoring:
         if (_activeGroup == null) {
           body = const Center(child: CircularProgressIndicator(color: _color));
@@ -465,7 +492,7 @@ class _FocalPresentationScoringScreenState
 //  INTERNAL STATE ENUM
 // ══════════════════════════════════════════════════════════════
 
-enum _FocalState { waiting, scoring, alreadyScored, submitted }
+enum _FocalState { waiting, ready, scoring, alreadyScored, submitted }
 
 // ══════════════════════════════════════════════════════════════
 //  DUMMY GROUP
