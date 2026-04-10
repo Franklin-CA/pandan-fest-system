@@ -48,7 +48,6 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
   bool _groupsLoading = true;
 
   // ── session state from Firestore ──────────────────────────────
-  String? _pushedGroupId;
   String? _currentStationId; // ← active station from live_sessions
   String? _currentStationName;
   List<String> _activeCriteriaIds = [];
@@ -152,8 +151,6 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
     _sessionSub = _service.sessionStream().listen((snap) {
       if (!snap.exists) return;
       final d = snap.data()!;
-      final isPushed = d['isPushed'] as bool? ?? false;
-      final pushedGroupId = d['groupId'] as String?;
       final timerPreset = d['timerPreset'] as String? ?? 'streetDance';
       final rawIds = d['criteriaIds'];
       final stationId = d['stationId'] as String?;
@@ -164,25 +161,14 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
       final serverRunning = d['timerRunning'] as bool? ?? false;
       _syncTimer(serverElapsed, serverRunning);
 
-      // ── Only react to street dance pushes ──────────────────
-      if (isPushed && timerPreset != 'streetDance') {
-        setState(() => _pushedGroupId = null);
-        return;
-      }
+      // ── Only react to street dance sessions ────────────────
+      if (timerPreset != 'streetDance') return;
 
       setState(() {
         _activeCriteriaIds = rawIds != null ? List<String>.from(rawIds) : [];
-        _pushedGroupId = (isPushed && pushedGroupId != null)
-            ? pushedGroupId
-            : null;
         _currentStationId = stationId;
         _currentStationName = stationName;
       });
-
-      // If admin reset while judge is on submitted screen → back to picker
-      if (!isPushed && _screenState == JudgeScreenState.submitted) {
-        setState(() => _screenState = JudgeScreenState.selectContestant);
-      }
 
       // If judge is currently on scoring/alreadyScored and the station
       // changed, re-evaluate the already-scored state.
@@ -394,7 +380,6 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
                 scoredGroupStationKeys: _scoredKeys,
                 currentStationId: _currentStationId,
                 groups: _groups,
-                pushedGroupId: _pushedGroupId,
                 onSelect: _selectContestant,
               ),
       JudgeScreenState.scoring => JudgeScoringBody(
@@ -462,7 +447,7 @@ class _StreetDanceScoringScreenState extends State<StreetDanceScoringScreen> {
               switchInCurve: Curves.easeOut,
               child: KeyedSubtree(
                 key: ValueKey(
-                  '$_screenState-${_selectedGroup?.id}-$_pushedGroupId-$_currentStationId',
+                  '$_screenState-${_selectedGroup?.id}-$_currentStationId',
                 ),
                 child: body,
               ),

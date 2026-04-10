@@ -26,8 +26,8 @@ class _FestivalQueenScoringScreenState
   final _auth = FirebaseAuth.instance;
 
   // ── screen state ──────────────────────────────────────────────
-  _FestivalQueenState _state = _FestivalQueenState.waiting;
-  PerformingGroup? _activeGroup;
+  JudgeScreenState _screenState = JudgeScreenState.selectContestant;
+  PerformingGroup? _selectedGroup;
 
   // ── form state ────────────────────────────────────────────────
   final Map<String, TextEditingController> _controllers = {};
@@ -36,10 +36,9 @@ class _FestivalQueenScoringScreenState
 
   // ── Firestore live data ───────────────────────────────────────
   List<PerformingGroup> _groups = [];
+  bool _groupsLoading = true;
 
   // ── session data from Firestore ───────────────────────────────
-  String? _pushedGroupId;
-  String? _lastLoadedGroupId;
   String? _currentStationId;
   String? _currentStationName;
   List<String> _activeCriteriaIds = [];
@@ -123,20 +122,10 @@ class _FestivalQueenScoringScreenState
 
   void _listenGroups() {
     _groupsSub = _service.groupsStream().listen((groups) {
-      setState(() => _groups = groups);
-
-      if (_pushedGroupId != null &&
-          _lastLoadedGroupId != _pushedGroupId &&
-          _state == _FestivalQueenState.waiting) {
-        final match = groups.firstWhere(
-          (g) => g.id == _pushedGroupId,
-          orElse: () => _kDummyGroup,
-        );
-        if (match.id.isNotEmpty) {
-          _lastLoadedGroupId = _pushedGroupId;
-          _loadGroupForScoring(match);
-        }
-      }
+      setState(() {
+        _groups = groups;
+        _groupsLoading = false;
+      });
     });
   }
 
@@ -144,8 +133,6 @@ class _FestivalQueenScoringScreenState
     _sessionSub = _service.sessionStream().listen((snap) {
       if (!snap.exists) return;
       final d = snap.data()!;
-      final isPushed = d['isPushed'] as bool? ?? false;
-      final pushedGroupId = d['groupId'] as String?;
       final timerPreset = d['timerPreset'] as String? ?? 'streetDance';
       final rawIds = d['criteriaIds'];
       final stationId = d['stationId'] as String?;
@@ -156,8 +143,8 @@ class _FestivalQueenScoringScreenState
       final serverRunning = d['timerRunning'] as bool? ?? false;
       _syncTimer(serverElapsed, serverRunning);
 
-      // ── Only react to festival queen pushes ──────────────────────────
-      if (isPushed && timerPreset != 'festivalQueen') return;
+      // ── Only react to festival queen sessions ────────────────
+      if (timerPreset != 'festivalQueen') return;
 
       setState(() {
         _activeCriteriaIds = rawIds != null ? List<String>.from(rawIds) : [];
@@ -165,31 +152,11 @@ class _FestivalQueenScoringScreenState
         _currentStationName = stationName;
       });
 
-      if (isPushed && pushedGroupId != null) {
-        setState(() => _pushedGroupId = pushedGroupId);
-
-        if (pushedGroupId != _lastLoadedGroupId) {
-          _lastLoadedGroupId = pushedGroupId;
-
-          final group = _groups.firstWhere(
-            (g) => g.id == pushedGroupId,
-            orElse: () => _kDummyGroup,
-          );
-
-          if (group.id.isNotEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback(
-              (_) => _loadGroupForScoring(group),
-            );
-          }
-        }
-      } else {
-        // Admin reset
-        setState(() {
-          _pushedGroupId = null;
-          _lastLoadedGroupId = null;
-          _state = _FestivalQueenState.waiting;
-          _activeGroup = null;
-        });
+      // If judge is currently on scoring/alreadyScored and the station
+      // changed, re-evaluate the already-scored state.
+      if (_screenState == JudgeScreenState.scoring ||
+          _screenState == JudgeScreenState.alreadyScored) {
+        _reevaluateScoredState();
       }
     });
   }
@@ -240,7 +207,22 @@ class _FestivalQueenScoringScreenState
     } catch (_) {}
   }
 
-  void _loadGroupForScoring(PerformingGroup group) {
+  void _reevaluateScoredState() {
+    if (_selectedGroup == null || _currentStationId == null) return;
+    final key = '${_selectedGroup!.id}_$_currentStationId';
+    final alreadyScored = _scoredKeys.contains(key);
+    setState(() {
+      _screenState = alreadyScored
+          ? JudgeScreenState.alreadyScored
+          : JudgeScreenState.scoring;
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  //  FORM ACTIONS
+  // ══════════════════════════════════════════════════════════════
+
+  void _selectContestant(PerformingGroup group) {
     for (final ctrl in _controllers.values) ctrl.clear();
     for (final key in _errors.keys) _errors[key] = null;
 
@@ -248,14 +230,19 @@ class _FestivalQueenScoringScreenState
     final alreadyScored = _scoredKeys.contains(key);
 
     setState(() {
-      _activeGroup = group;
-      _state = alreadyScored ? _FestivalQueenState.alreadyScored : _FestivalQueenState.scoring;
+      _selectedGroup = group;
+      _screenState = alreadyScored
+          ? JudgeScreenState.alreadyScored
+          : JudgeScreenState.scoring;
     });
   }
 
-  // ══════════════════════════════════════════════════════════════
-  //  FORM ACTIONS
-  // ══════════════════════════════════════════════════════════════
+  void _backToSelection() {
+    setState(() {
+      _selectedGroup = null;
+      _screenState = JudgeScreenState.selectContestant;
+    });
+  }
 
   bool _validate() {
     bool valid = true;
@@ -283,7 +270,7 @@ class _FestivalQueenScoringScreenState
   }
 
   Future<void> _submitScores() async {
-    if (!_validate() || _activeGroup == null) return;
+    if (!_validate() || _selectedGroup == null) return;
     if (_currentStationId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -312,17 +299,17 @@ class _FestivalQueenScoringScreenState
     try {
       await _service.submitScores(
         judgeEmail: _judgeEmail,
-        groupId: _activeGroup!.id,
+        groupId: _selectedGroup!.id,
         stationId: _currentStationId!,
         scores: scores,
         weightedTotal: _weightedTotal,
       );
 
-      final key = '${_activeGroup!.id}_$_currentStationId';
+      final key = '${_selectedGroup!.id}_$_currentStationId';
       setState(() {
         _isSubmitting = false;
         _scoredKeys.add(key);
-        _state = _FestivalQueenState.submitted;
+        _screenState = JudgeScreenState.submitted;
       });
     } catch (e) {
       setState(() => _isSubmitting = false);
@@ -355,67 +342,59 @@ class _FestivalQueenScoringScreenState
 
   @override
   Widget build(BuildContext context) {
-    Widget body;
-
-    switch (_state) {
-      case _FestivalQueenState.waiting:
-        body = JudgeWaitingForPush(
-          categoryColor: _color,
-          categoryTitle: _title,
-        );
-        break;
-
-      case _FestivalQueenState.scoring:
-        if (_activeGroup == null) {
-          body = const Center(child: CircularProgressIndicator(color: _color));
-          break;
-        }
-        body = JudgeScoringBody(
-          group: _activeGroup!,
-          criteria: _criteria,
-          controllers: _controllers,
-          errors: _errors,
-          categoryTitle: _title,
-          categoryIcon: _icon,
-          categoryColor: _color,
-          filledCount: _filledCount,
-          weightedTotal: _weightedTotal,
-          isSubmitting: _isSubmitting,
-          onBack: null,
-          onSubmit: _submitScores,
-          onChanged: (id) => setState(() => _errors[id] = null),
-          timerElapsed: _timerElapsed,
-          timerRunning: _timerRunning,
-          timerDisplay: _timerDisplay,
-          stationName: _currentStationName,
-        );
-        break;
-
-      case _FestivalQueenState.alreadyScored:
-        body = JudgeAlreadyScoredScreen(
-          group: _activeGroup!,
-          categoryTitle: _title,
-          categoryIcon: _icon,
-          categoryColor: _color,
-          stationName: _currentStationName ?? 'this station',
-          onBack: null,
-        );
-        break;
-
-      case _FestivalQueenState.submitted:
-        body = JudgeSuccessState(
-          group: _activeGroup!,
-          criteria: _criteria,
-          controllers: _controllers,
-          categoryTitle: _title,
-          categoryIcon: _icon,
-          categoryColor: _color,
-          weightedTotal: _weightedTotal,
-          totalGroups: _groups.length,
-          onScoreAnother: null,
-        );
-        break;
-    }
+    final body = switch (_screenState) {
+      JudgeScreenState.selectContestant =>
+        _groupsLoading
+            ? const Center(child: CircularProgressIndicator(color: _color))
+            : JudgeContestantPicker(
+                categoryTitle: _title,
+                categoryIcon: _icon,
+                categoryColor: _color,
+                criteria: _criteria,
+                scoredGroupStationKeys: _scoredKeys,
+                currentStationId: _currentStationId,
+                groups: _groups,
+                onSelect: _selectContestant,
+              ),
+      JudgeScreenState.scoring => JudgeScoringBody(
+        group: _selectedGroup!,
+        criteria: _criteria,
+        controllers: _controllers,
+        errors: _errors,
+        categoryTitle: _title,
+        categoryIcon: _icon,
+        categoryColor: _color,
+        filledCount: _filledCount,
+        weightedTotal: _weightedTotal,
+        isSubmitting: _isSubmitting,
+        onBack: _backToSelection,
+        onSubmit: _submitScores,
+        onChanged: (id) => setState(() => _errors[id] = null),
+        timerElapsed: _timerElapsed,
+        timerRunning: _timerRunning,
+        timerDisplay: _timerDisplay,
+        stationName: _currentStationName,
+      ),
+      JudgeScreenState.alreadyScored => JudgeAlreadyScoredScreen(
+        group: _selectedGroup!,
+        categoryTitle: _title,
+        categoryIcon: _icon,
+        categoryColor: _color,
+        stationName: _currentStationName ?? 'this station',
+        onBack: _backToSelection,
+      ),
+      JudgeScreenState.submitted => JudgeSuccessState(
+        group: _selectedGroup!,
+        criteria: _criteria,
+        controllers: _controllers,
+        categoryTitle: _title,
+        categoryIcon: _icon,
+        categoryColor: _color,
+        weightedTotal: _weightedTotal,
+        totalGroups: _groups.length,
+        onScoreAnother: _backToSelection,
+      ),
+    };
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
@@ -429,7 +408,11 @@ class _FestivalQueenScoringScreenState
             categoryIcon: _icon,
             categoryColor: _color,
             onLogout: _logout,
-            onBack: null,
+            onBack:
+                _screenState == JudgeScreenState.scoring ||
+                    _screenState == JudgeScreenState.alreadyScored
+                ? _backToSelection
+                : null,
           ),
           Expanded(
             child: AnimatedSwitcher(
@@ -437,7 +420,7 @@ class _FestivalQueenScoringScreenState
               switchInCurve: Curves.easeOut,
               child: KeyedSubtree(
                 key: ValueKey(
-                  '$_state-${_activeGroup?.id}-$_pushedGroupId-$_currentStationId',
+                  '$_screenState-${_selectedGroup?.id}-$_currentStationId',
                 ),
                 child: body,
               ),
@@ -448,21 +431,3 @@ class _FestivalQueenScoringScreenState
     );
   }
 }
-
-// ══════════════════════════════════════════════════════════════
-//  INTERNAL STATE ENUM
-// ══════════════════════════════════════════════════════════════
-
-enum _FestivalQueenState { waiting, scoring, alreadyScored, submitted }
-
-// ══════════════════════════════════════════════════════════════
-//  DUMMY GROUP
-// ══════════════════════════════════════════════════════════════
-
-const _kDummyGroup = PerformingGroup(
-  id: '',
-  name: 'Loading…',
-  barangay: '',
-  theme: '',
-  performanceOrder: 0,
-);

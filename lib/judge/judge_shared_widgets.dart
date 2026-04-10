@@ -903,7 +903,6 @@ class JudgeContestantPicker extends StatelessWidget {
 
   final List<PerformingGroup> groups;
   final void Function(PerformingGroup) onSelect;
-  final String? pushedGroupId;
 
   const JudgeContestantPicker({
     super.key,
@@ -915,7 +914,6 @@ class JudgeContestantPicker extends StatelessWidget {
     required this.currentStationId,
     required this.groups,
     required this.onSelect,
-    this.pushedGroupId,
   });
 
   bool _isScored(String groupId) {
@@ -1098,7 +1096,6 @@ class JudgeContestantPicker extends StatelessWidget {
 
               // ── Group cards ──
               ...groups.map((g) {
-                final isLocked = pushedGroupId != null && g.id != pushedGroupId;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 14),
                   child: JudgeContestantCard(
@@ -1106,8 +1103,7 @@ class JudgeContestantPicker extends StatelessWidget {
                     categoryColor: color,
                     categoryIcon: categoryIcon,
                     isScored: _isScored(g.id),
-                    isLocked: isLocked,
-                    onSelect: isLocked ? null : () => onSelect(g),
+                    onSelect: () => onSelect(g),
                   ),
                 );
               }),

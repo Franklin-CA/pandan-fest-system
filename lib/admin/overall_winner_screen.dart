@@ -383,6 +383,19 @@ class _ResultsScreenState extends State<ResultsScreen>
   // ══════════════════════════════════════════════════════════════
 
   Future<void> _finalizeResults() async {
+    final ranked = _rankedResults;
+    if (ranked.isNotEmpty) {
+      final winner = ranked.first;
+
+      await _db.collection('competition_winners').doc('current').set({
+        'winnerId': winner.id,
+        'winnerName': winner.name,
+        'winnerBarangay': winner.barangay,
+        'finalScore': winner.finalScore,
+        'finalizedAt': FieldValue.serverTimestamp(),
+      });
+    }
+
     await _db.collection('results_meta').doc('current').set({
       'isFinalized': true,
       'finalizedAt': FieldValue.serverTimestamp(),

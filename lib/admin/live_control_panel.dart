@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pandan_fest/constant/colors.dart';
 import 'package:pandan_fest/models/app_models.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pandan_fest/services.dart';
 
 // ═══════════════════════════════════════════════════════════════
@@ -18,12 +17,9 @@ import 'package:pandan_fest/services.dart';
 //    "stationId": "station_1",
 //    "stationName": "Apaya Arch",
 //    "criteriaIds": ["sd_1", "sd_2", ...],
-//    "isPushed": true,
 //    "timerElapsed": 0,
 //    "timerRunning": false,
-//    "timerPreset": "streetDance",
-//    "pushedAt": Timestamp,
-//    "pushedBy": "admin@pandanfest.com"
+//    "timerPreset": "streetDance"
 //  }
 //
 //  judge_scores/{judgeEmail}_{groupId}  — one doc per judge per group
@@ -166,7 +162,6 @@ class LiveControlPanel extends StatefulWidget {
 class _LiveControlPanelState extends State<LiveControlPanel>
     with SingleTickerProviderStateMixin {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // ── Group / station / criteria state ──
   String? selectedGroupId;
@@ -175,8 +170,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
   List<String> selectedCriteriaIds = streetDanceCriteria
       .map((c) => c.id)
       .toList();
-  bool isPushedToJudges = false;
-  bool isPushing = false;
+
   String? selectedStationId;
 
   // ── Timer state ──
@@ -319,7 +313,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
           final incomingStationId = d['stationId'] as String?;
 
           setState(() {
-            isPushedToJudges = d['isPushed'] as bool? ?? false;
+
             selectedGroupId = incomingGroupId;
             selectedGroupName = d['groupName'] as String?;
             selectedGroupBarangay = d['barangay'] as String?;
@@ -384,60 +378,6 @@ class _LiveControlPanelState extends State<LiveControlPanel>
     }
   }
 
-  Future<void> _pushToJudges() async {
-    final isStreetDance = _timerPreset == TimerPreset.streetDance;
-    if (selectedGroupId == null ||
-        activeCriteria.isEmpty ||
-        (isStreetDance && selectedStationId == null)) {
-      return;
-    }
-    final user = _auth.currentUser;
-    setState(() => isPushing = true);
-
-    final sId = isStreetDance
-        ? selectedStationId
-        : (_timerPreset == TimerPreset.focalPresentation
-              ? 'focal_stage'
-              : 'queen_stage');
-    final sName = isStreetDance
-        ? selectedStation?.name
-        : (_timerPreset == TimerPreset.focalPresentation
-              ? 'Focal Stage'
-              : 'Festival Queen Stage');
-
-    try {
-      await _db.collection('live_sessions').doc('current').set({
-        'groupId': selectedGroupId,
-        'groupName': selectedGroup?.name ?? selectedGroupName ?? '',
-        'barangay': selectedGroup?.barangay ?? selectedGroupBarangay ?? '',
-        'stationId': sId,
-        'stationName': sName ?? '',
-        'criteriaIds': selectedCriteriaIds,
-        'isPushed': true,
-        'timerElapsed': _elapsedSeconds,
-        'timerRunning': _timerRunning,
-        'timerPreset': _timerPreset.docValue,
-        'pushedAt': FieldValue.serverTimestamp(),
-        'pushedBy': user?.email ?? user?.uid ?? 'admin',
-      });
-      setState(() {
-        isPushing = false;
-        isPushedToJudges = true;
-      });
-      _toast(
-        '${selectedGroup?.name ?? 'Group'} pushed to all 5 judges. Scoring can begin.',
-        AppColors.live,
-      );
-    } catch (e) {
-      setState(() => isPushing = false);
-      _toast('Failed to push: $e', AppColors.danger);
-    }
-  }
-
-  Future<void> _resetPush() async {
-    await _writeSessionPartial({'isPushed': false});
-    setState(() => isPushedToJudges = false);
-  }
 
   // ══════════════════════════════════════════════════════════════
   //  TIMER CONTROLS — local tick + Firestore sync
@@ -534,13 +474,11 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                             selectedGroupId = id;
                             selectedGroupName = g.name;
                             selectedGroupBarangay = g.barangay;
-                            isPushedToJudges = false;
                           });
                           _writeSessionPartial({
                             'groupId': id,
                             'groupName': g.name,
                             'barangay': g.barangay,
-                            'isPushed': false,
                           });
                         },
                       ),
@@ -553,12 +491,10 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                             final s = kStations.firstWhere((s) => s.id == id);
                             setState(() {
                               selectedStationId = id;
-                              isPushedToJudges = false;
                             });
                             _writeSessionPartial({
                               'stationId': id,
                               'stationName': s.name,
-                              'isPushed': false,
                             });
                           },
                         ),
@@ -572,31 +508,16 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                             selectedCriteriaIds.contains(id)
                                 ? selectedCriteriaIds.remove(id)
                                 : selectedCriteriaIds.add(id);
-                            isPushedToJudges = false;
                           });
                           _writeSessionPartial({
                             'criteriaIds': selectedCriteriaIds,
-                            'isPushed': false,
                           });
                         },
                       ),
                       const SizedBox(height: 16),
                       _JudgePanelInfo(),
                       const SizedBox(height: 16),
-                      _PushButton(
-                        isReady:
-                            selectedGroupId != null &&
-                            (_timerPreset != TimerPreset.streetDance ||
-                                selectedStationId != null) &&
-                            activeCriteria.isNotEmpty,
-                        isPushing: isPushing,
-                        isPushed: isPushedToJudges,
-                        onPush: _pushToJudges,
-                      ),
-                      if (isPushedToJudges) ...[
-                        const SizedBox(height: 10),
-                        _ResetHint(onReset: _resetPush),
-                      ],
+
                     ],
                   ),
                 ),
@@ -662,7 +583,6 @@ class _LiveControlPanelState extends State<LiveControlPanel>
                         station: selectedStation,
                         criteria: activeCriteria,
                         judgeScores: currentScores,
-                        isPushed: isPushedToJudges,
                       ),
                       const SizedBox(height: 16),
                       _RankingBoard(rankings: rankings),
@@ -785,41 +705,7 @@ class _LiveControlPanelState extends State<LiveControlPanel>
             ],
           ),
         ),
-        if (isPushedToJudges)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.live.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.live.withOpacity(0.4)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.wifi_rounded, color: AppColors.live, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'Synced to 5 judges',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: AppColors.live,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _resetPush,
-                  child: Tooltip(
-                    message: 'Clear and select a new group',
-                    child: Icon(
-                      Icons.close_rounded,
-                      color: AppColors.live,
-                      size: 16,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+
       ],
     );
   }
@@ -834,10 +720,8 @@ class _LiveControlPanelState extends State<LiveControlPanel>
         currentStep = 2;
       } else if (activeCriteria.isEmpty) {
         currentStep = isStreetDance ? 3 : 2;
-      } else if (!isPushedToJudges) {
-        currentStep = isStreetDance ? 4 : 3;
       } else {
-        currentStep = isStreetDance ? 5 : 4;
+        currentStep = isStreetDance ? 4 : 3;
       }
     }
 
@@ -851,13 +735,8 @@ class _LiveControlPanelState extends State<LiveControlPanel>
       ),
       _StepInfo(
         isStreetDance ? 4 : 3,
-        'Push to Judges',
-        currentStep >= (isStreetDance ? 4 : 3),
-      ),
-      _StepInfo(
-        isStreetDance ? 5 : 4,
         'Monitor Live',
-        currentStep >= (isStreetDance ? 5 : 4),
+        currentStep >= (isStreetDance ? 4 : 3),
       ),
     ];
 
@@ -1489,40 +1368,6 @@ class _StepChip extends StatelessWidget {
   }
 }
 
-class _ResetHint extends StatelessWidget {
-  final VoidCallback onReset;
-  const _ResetHint({required this.onReset});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onReset,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.background,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.refresh_rounded, size: 15, color: AppColors.silverRank),
-            const SizedBox(width: 6),
-            Text(
-              'Select a different group or station',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: AppColors.silverRank,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  GROUP SELECTOR — now driven by live Firestore data
 // ═══════════════════════════════════════════════════════════════
@@ -1869,153 +1714,6 @@ class _CriteriaSelector extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PUSH BUTTON
-// ═══════════════════════════════════════════════════════════════
-
-class _PushButton extends StatelessWidget {
-  final bool isReady, isPushing, isPushed;
-  final VoidCallback onPush;
-
-  const _PushButton({
-    required this.isReady,
-    required this.isPushing,
-    required this.isPushed,
-    required this.onPush,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Color bgColor;
-    Widget child;
-    VoidCallback? tapHandler;
-
-    if (isPushing) {
-      bgColor = AppColors.secondary.withOpacity(0.7);
-      child = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Syncing to Firestore…',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      );
-      tapHandler = null;
-    } else if (isPushed) {
-      bgColor = AppColors.live;
-      child = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.wifi_rounded, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Text(
-            'Pushed to All 5 Judges ✓',
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      );
-      tapHandler = onPush;
-    } else if (!isReady) {
-      bgColor = AppColors.divider;
-      child = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.send_rounded, color: AppColors.silverRank, size: 20),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Push to Judges',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppColors.silverRank,
-                ),
-              ),
-              Text(
-                'Select group & station first',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: AppColors.silverRank,
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-      tapHandler = null;
-    } else {
-      bgColor = AppColors.primary;
-      child = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-          const SizedBox(width: 10),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Step 4 — Push to All Judges',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                'Send group, station & criteria to 5 panels',
-                style: GoogleFonts.poppins(fontSize: 11, color: Colors.white70),
-              ),
-            ],
-          ),
-        ],
-      );
-      tapHandler = onPush;
-    }
-
-    return GestureDetector(
-      onTap: tapHandler,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: isReady && !isPushing
-              ? [
-                  BoxShadow(
-                    color: bgColor.withOpacity(0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : [],
-        ),
-        child: child,
-      ),
-    );
-  }
-}
 
 // ═══════════════════════════════════════════════════════════════
 //  SCORE DISPLAY — reads live judge scores from Firestore
@@ -2026,14 +1724,12 @@ class _ScoreDisplay extends StatelessWidget {
   final PerformanceStation? station;
   final List<ActiveCriterion> criteria;
   final List<JudgeScore> judgeScores;
-  final bool isPushed;
 
   const _ScoreDisplay({
     required this.group,
     required this.station,
     required this.criteria,
     required this.judgeScores,
-    required this.isPushed,
   });
 
   double get avgWeightedScore {
@@ -2125,7 +1821,7 @@ class _ScoreDisplay extends StatelessWidget {
               ],
             ],
           ),
-          if (group == null || !isPushed) ...[
+          if (group == null) ...[
             const SizedBox(height: 20),
             Center(
               child: Column(
@@ -2145,9 +1841,7 @@ class _ScoreDisplay extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    group == null
-                        ? 'Waiting for group selection…'
-                        : 'Group & station selected. Push to judges to begin scoring.',
+                    'Waiting for group selection…',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       color: AppColors.silverRank,
